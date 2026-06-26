@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="38%" r="75%">
+      <stop offset="0%" stop-color="#FFF1F5"/>
+      <stop offset="100%" stop-color="#FBD0DD"/>
+    </radialGradient>
+    <linearGradient id="petal" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FBD3DE"/>
+      <stop offset="100%" stop-color="#EC8FA6"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="512" height="512" fill="url(#bg)"/>
+
+  <!-- 5 sakura petals around the center (256,256) -->
+  <g fill="url(#petal)" stroke="#E07B95" stroke-width="4" stroke-linejoin="round">
+    <g>
+      <path d="M256 256 C 205 165, 222 116, 240 100 C 249 91, 248 104, 256 104 C 264 104, 263 91, 272 100 C 290 116, 307 165, 256 256 Z"/>
+    </g>
+    <g transform="rotate(72 256 256)">
+      <path d="M256 256 C 205 165, 222 116, 240 100 C 249 91, 248 104, 256 104 C 264 104, 263 91, 272 100 C 290 116, 307 165, 256 256 Z"/>
+    </g>
+    <g transform="rotate(144 256 256)">
+      <path d="M256 256 C 205 165, 222 116, 240 100 C 249 91, 248 104, 256 104 C 264 104, 263 91, 272 100 C 290 116, 307 165, 256 256 Z"/>
+    </g>
+    <g transform="rotate(216 256 256)">
+      <path d="M256 256 C 205 165, 222 116, 240 100 C 249 91, 248 104, 256 104 C 264 104, 263 91, 272 100 C 290 116, 307 165, 256 256 Z"/>
+    </g>
+    <g transform="rotate(288 256 256)">
+      <path d="M256 256 C 205 165, 222 116, 240 100 C 249 91, 248 104, 256 104 C 264 104, 263 91, 272 100 C 290 116, 307 165, 256 256 Z"/>
+    </g>
+  </g>
+
+  <!-- flower center -->
+  <circle cx="256" cy="256" r="34" fill="#E9C089"/>
+  <g fill="#FFF7EF">
+    <circle cx="256" cy="232" r="6"/>
+    <circle cx="279" cy="249" r="6"/>
+    <circle cx="270" cy="276" r="6"/>
+    <circle cx="242" cy="276" r="6"/>
+    <circle cx="233" cy="249" r="6"/>
+  </g>
+</svg>

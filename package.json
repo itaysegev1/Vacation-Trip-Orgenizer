@@ -1,0 +1,33 @@
+{
+  "name": "honeymoon-app",
+  "private": true,
+  "version": "2.3.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "dev:demo": "VITE_DEMO=true vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "gen-icons": "node scripts/generate-icons.mjs",
+    "generate-rules": "node scripts/generate-rules.mjs",
+    "predeploy": "npm run generate-rules && npm run build",
+    "deploy": "firebase deploy"
+  },
+  "dependencies": {
+    "canvas-confetti": "^1.9.4",
+    "date-fns": "^4.4.0",
+    "firebase": "^11.10.0",
+    "motion": "^12.41.0",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "react-router-dom": "^7.18.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.1",
+    "@vitejs/plugin-react": "^6.0.3",
+    "sharp": "^0.35.2",
+    "tailwindcss": "^4.3.1",
+    "vite": "^8.1.0",
+    "vite-plugin-pwa": "^1.3.0"
+  }
+}
