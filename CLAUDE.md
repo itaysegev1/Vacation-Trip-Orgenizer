@@ -41,6 +41,9 @@ behind what the app actually does.
 
 ## Other established constraints (keep consistent)
 
+- **NEVER `git commit` or `git push` on your own.** The user has not authorized it. Make the code
+  changes, verify them, and stop — leave committing and pushing to the user unless they explicitly
+  ask you to do it in that message. The same goes for `firebase deploy` (interactive; user-only).
 - **Stay on Firebase Spark ($0):** no Cloud Functions / Blaze / cron / Cloud Storage. Shared
   state coordinates through small Firestore docs ("first client past the TTL writes, others read").
 - **Never `await` a Firestore write before updating the UI** (offline would freeze); guard
