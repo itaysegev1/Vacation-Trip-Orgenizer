@@ -155,23 +155,33 @@ export default function Ideas() {
 
   // Geocoding candidates for an idea, in DESCENDING order of precision. We try
   // each until one resolves, so a place still gets coordinates even when its most
-  // specific query fails — which is the common case: a precise (often Hebrew)
-  // street address rarely resolves on Nominatim, but the landmark name + city
-  // does, and the bare city always does.
+  // specific query fails — the common case, verified against Nominatim:
+  //   • a full "<business>, <house no>, <city>, <country>" string → no result
+  //   • a Hebrew city name ("קוסמוי") → no result
+  //   • BUT the English location tail ("Surat Thani, Thailand") → resolves
+  // So we build, in order:
   //   1. exact address            — most accurate when Nominatim can find it
   //   2. "name + city"            — pins the specific landmark → a DISTINCT point
-  //                                 per idea (so proximity isn't all-zero), and
-  //                                 succeeds far more often than a full address
-  //   3. city                     — last-resort centroid so it never ends up unsorted
+  //   3. address tails            — drop the leading segments (business name /
+  //                                 house number) one at a time, keeping the
+  //                                 increasingly-coarse English "…, City, Country"
+  //                                 remainder; the first that resolves wins
+  //   4. city                     — last-resort centroid
+  // Capped at 6 attempts (each is a rate-limited network call); the kept order is
+  // most-accurate → coarsest, so an early hit is also the best hit.
   const geocodeCandidates = (idea) => {
-    const address = idea.address?.trim();
-    const city = idea.city?.trim();
-    const name = idea.name?.trim();
+    const address = (idea.address || '').trim();
+    const city = (idea.city || '').trim();
+    const name = (idea.name || '').trim();
     const out = [];
     if (address) out.push(address);
     if (name && city) out.push(`${name} ${city}`);
+    if (address.includes(',')) {
+      const parts = address.split(',').map((s) => s.trim()).filter(Boolean);
+      for (let i = 1; i < parts.length; i += 1) out.push(parts.slice(i).join(', '));
+    }
     if (city) out.push(city);
-    return [...new Set(out)];
+    return [...new Set(out.filter(Boolean))].slice(0, 6);
   };
 
   // Signature of the location inputs — lets us skip re-geocoding on an edit that
