@@ -277,8 +277,9 @@ export default function Budget() {
         </div>
       </div>
 
-      {/* FX rate trend — one axed chart per currency (¥/฿ have different scales) */}
-      {rateSeries.length > 0 && ratePoints > 1 && (
+      {/* FX rate trend — one axed chart per currency (¥/฿ have different scales).
+          Shows from the first snapshot and fills into a trend over the coming days. */}
+      {rateSeries.length > 0 && ratePoints >= 1 && (
         <div className="mt-4 rounded-2xl border border-white/70 bg-white/70 p-4 shadow-soft">
           <h2 className="mb-1 font-display text-lg text-rose-deep">מגמת שער 📈</h2>
           <p className="mb-2 text-xs text-ink-soft">כמה {BASE_CURRENCY.symbol}1 שווה לאורך זמן</p>
@@ -329,7 +330,7 @@ export default function Budget() {
               {formatILS(budget)}
             </p>
           )}
-          {analytics.dailySeries.length > 1 && (
+          {analytics.dailySeries.length >= 1 && (
             <div className="mt-3">
               <p className="mb-1 text-xs text-ink-soft">הוצאה יומית (₪)</p>
               <LineChart

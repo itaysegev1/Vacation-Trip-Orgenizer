@@ -153,20 +153,57 @@ export default function Ideas() {
 
   const isoFor = (countryId) => byId(DESTINATIONS, countryId)?.iso;
 
-  // Geocode an address → lat/lng AFTER the idea is saved. Fully decoupled and
-  // fail-soft: it can never block, delay or fail the save (geocode() returns null
-  // on any error/block/offline, and the follow-up write is best-effort).
-  const geocodeInBackground = (id, address, countryId, prevIdea) => {
-    if (!id || !address) return;
-    // Skip if the address is unchanged and we already have coordinates.
-    if (prevIdea && prevIdea.geocodedAddress === address && prevIdea.lat != null) return;
-    geocode(address, isoFor(countryId))
-      .then((coords) => {
-        if (coords) {
+  // Geocoding candidates for an idea, in DESCENDING order of precision. We try
+  // each until one resolves, so a place still gets coordinates even when its most
+  // specific query fails — which is the common case: a precise (often Hebrew)
+  // street address rarely resolves on Nominatim, but the landmark name + city
+  // does, and the bare city always does.
+  //   1. exact address            — most accurate when Nominatim can find it
+  //   2. "name + city"            — pins the specific landmark → a DISTINCT point
+  //                                 per idea (so proximity isn't all-zero), and
+  //                                 succeeds far more often than a full address
+  //   3. city                     — last-resort centroid so it never ends up unsorted
+  const geocodeCandidates = (idea) => {
+    const address = idea.address?.trim();
+    const city = idea.city?.trim();
+    const name = idea.name?.trim();
+    const out = [];
+    if (address) out.push(address);
+    if (name && city) out.push(`${name} ${city}`);
+    if (city) out.push(city);
+    return [...new Set(out)];
+  };
+
+  // Signature of the location inputs — lets us skip re-geocoding on an edit that
+  // didn't touch the address / city / name.
+  const locationSig = (idea) => geocodeCandidates(idea).join('|');
+
+  // Try the candidates in order; return { coords, query } from the first hit, or
+  // null. geocode() is itself fail-soft (null on any error/block/offline/demo).
+  const geocodeIdea = async (idea) => {
+    const iso = isoFor(idea.country);
+    for (const q of geocodeCandidates(idea)) {
+      const coords = await geocode(q, iso);
+      if (coords) return { coords, query: q };
+    }
+    return null;
+  };
+
+  // Geocode AFTER the idea is saved. Fully decoupled and fail-soft: it can never
+  // block, delay or fail the save (the follow-up write is best-effort).
+  const geocodeInBackground = (id, idea, prevIdea) => {
+    if (!id || geocodeCandidates(idea).length === 0) return;
+    const sig = locationSig(idea);
+    // Skip if the location inputs are unchanged and we already have coordinates.
+    if (prevIdea && prevIdea.geoSig === sig && prevIdea.lat != null) return;
+    geocodeIdea(idea)
+      .then((res) => {
+        if (res) {
           update(id, {
-            lat: coords.lat,
-            lng: coords.lng,
-            geocodedAddress: address,
+            lat: res.coords.lat,
+            lng: res.coords.lng,
+            geocodedAddress: res.query,
+            geoSig: sig,
             geocodedAt: Date.now(),
           }).catch(() => {});
         }
@@ -174,27 +211,29 @@ export default function Ideas() {
       .catch(() => {});
   };
 
-  // Lazy backfill: geocode existing ideas that have an address but no coords yet
-  // (e.g. created before geocoding existed), so the proximity feature works on
-  // legacy data. Serialized + rate-limited inside geocode(); fail-soft; demo no-op
-  // (those ideas already have coords). Each id is attempted at most once.
+  // Lazy backfill: geocode existing ideas that have a location (address OR city)
+  // but no coords yet (e.g. created before geocoding existed, or whose precise
+  // address previously failed), so proximity works on legacy data. Serialized +
+  // rate-limited inside geocode(); fail-soft; demo no-op (those ideas already
+  // have coords). Each id is attempted at most once per session.
   const geocodeAttempted = useRef(new Set());
   useEffect(() => {
     let cancelled = false;
     (async () => {
       const pending = docs.filter(
-        (d) => !hasCoords(d) && d.address?.trim() && !geocodeAttempted.current.has(d.id)
+        (d) => !hasCoords(d) && geocodeCandidates(d).length > 0 && !geocodeAttempted.current.has(d.id)
       );
       for (const idea of pending) {
         if (cancelled) break;
         geocodeAttempted.current.add(idea.id);
-        const coords = await geocode(idea.address, isoFor(idea.country));
+        const res = await geocodeIdea(idea);
         if (cancelled) break;
-        if (coords) {
+        if (res) {
           update(idea.id, {
-            lat: coords.lat,
-            lng: coords.lng,
-            geocodedAddress: idea.address,
+            lat: res.coords.lat,
+            lng: res.coords.lng,
+            geocodedAddress: res.query,
+            geoSig: locationSig(idea),
             geocodedAt: Date.now(),
           }).catch(() => {});
         }
@@ -225,7 +264,7 @@ export default function Ideas() {
     Promise.resolve(
       editingId ? update(editingId, data) : add({ ...data, createdBy: profile?.id || SHARED.id })
     )
-      .then((ref) => geocodeInBackground(editingId || ref?.id, data.address, data.country, prevIdea))
+      .then((ref) => geocodeInBackground(editingId || ref?.id, data, prevIdea))
       .catch((err) => console.error('idea save failed', err));
   };
 
@@ -414,6 +453,7 @@ export default function Ideas() {
                     onLongPress={(pos) => openStatusMenu(idea, pos)}
                     onBadgeTap={(pos) => openStatusMenu(idea, pos)}
                     distanceKm={showProximity ? distanceFrom(origin, idea) : undefined}
+                    isOrigin={showProximity && origin?.id === idea.id}
                   />
                 </SwipeableRow>
               ))}

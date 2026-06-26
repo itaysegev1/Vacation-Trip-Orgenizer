@@ -41,11 +41,13 @@ export default function LineChart({
     if (n === 0) return { pts: [], yTicks: [], xTicks: [], last: null };
     const min = zeroBased ? Math.min(0, ...values) : Math.min(...values);
     const max = Math.max(...values);
+    const flat = max === min; // single point, or all-equal values
     const span = max - min || 1;
     const x = (i) => padL + (n > 1 ? (i / (n - 1)) * plotW : plotW / 2);
-    const y = (v) => padT + (1 - (v - min) / span) * plotH;
+    const y = (v) => (flat ? padT + plotH / 2 : padT + (1 - (v - min) / span) * plotH);
     const points = values.map((v, i) => ({ x: x(i), y: y(v), v, i }));
-    const yt = [min, min + span / 2, max].map((v) => ({ v, y: y(v) }));
+    // Flat/single-point: one centered reference line instead of 3 fabricated ticks.
+    const yt = flat ? [{ v: min, y: padT + plotH / 2 }] : [min, min + span / 2, max].map((v) => ({ v, y: y(v) }));
     const idxs = n === 1 ? [0] : [0, Math.floor((n - 1) / 2), n - 1];
     const xt = [...new Set(idxs)].map((i) => ({ i, x: x(i), label: labels[i] || '' }));
     return { pts: points, yTicks: yt, xTicks: xt, last: points[points.length - 1] };

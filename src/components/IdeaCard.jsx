@@ -11,7 +11,7 @@ import { useLongPress } from '../lib/useLongPress';
  * quick status menu (onLongPress receives the press {x, y}). Action chips
  * (schedule / map / link) sit below.
  */
-export default function IdeaCard({ idea, onEdit, onSchedule, onLongPress, onBadgeTap, distanceKm }) {
+export default function IdeaCard({ idea, onEdit, onSchedule, onLongPress, onBadgeTap, distanceKm, isOrigin }) {
   const country = byId(Object.values(COUNTRIES), idea.country) || Object.values(COUNTRIES)[0];
   const cat = byId(IDEA_CATEGORIES, idea.category);
   const longPress = useLongPress((pos) => onLongPress(pos));
@@ -58,9 +58,9 @@ export default function IdeaCard({ idea, onEdit, onSchedule, onLongPress, onBadg
 
       {/* Actions */}
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        {distanceKm != null && (
+        {(isOrigin || distanceKm != null) && (
           <span className="inline-flex items-center gap-1 rounded-full bg-petal px-3 py-1.5 text-sm font-semibold text-rose-deep">
-            📍 {distanceKm === 0 ? 'נקודת מוצא' : fmtDistance(distanceKm)}
+            📍 {isOrigin ? 'נקודת מוצא' : fmtDistance(distanceKm)}
           </span>
         )}
         <button
