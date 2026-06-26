@@ -145,6 +145,14 @@ export interface TripConfig {
     barColors: { over: Hex; warn: Hex; ok: Hex };
     exchangeRateApi: { urlTemplate: string; cacheKey: string; maxAgeMs: number };
     fallbackRates: Record<ID, number>; // foreign-per-1-base
+    /** Shared current-rate doc (L2 cache: one client fetches, both read). */
+    sharedRates: { docPath: string; enabled: boolean };
+    /** Daily rate snapshots → FX history sparkline. */
+    rateHistory: { collection: string; maxPoints: number; enabled: boolean };
+    /** Client-side burn-rate / projection card. */
+    analytics: { enabled: boolean };
+    /** Optional atomic running-total doc (off by default; recompute is free at N≈2). */
+    summaryDoc: { path: string; enabled: boolean };
   };
   taxonomies: {
     ideaCategories: Category[];
@@ -166,6 +174,14 @@ export interface TripConfig {
     offlinePersistence: boolean;
     analyticsEnabled: boolean;
     mapsUrlTemplate: string;
+    /** Address → lat/lng geocoder (free, no-key Nominatim; client-side, fail-soft). */
+    geocoder: {
+      enabled: boolean;
+      urlTemplate: string;   // {query} is URL-encoded
+      countryCodes: string;  // bias, e.g. 'jp,th' (derived from destinations[].iso)
+      minIntervalMs: number; // client rate-limit (Nominatim policy ≤1 req/sec)
+      cachePrefix: string;   // localStorage memo of address→{lat,lng}
+    };
     /** Firestore-rules access control (also written into firestore.rules). */
     allowedEmails: string[];
   };
@@ -180,6 +196,10 @@ export interface TripConfig {
       countdownChipTickMs: number;
     };
     haptics: { enabled: boolean };
+    /** Walking-distance estimates for itinerary day optimization. */
+    geo: { walkingSpeedKmh: number; nearbyRadiusKm: number; maxWalkLegKm: number };
+    /** In-app (no-push) reminder thresholds. */
+    nudges: { enabled: boolean; taskDueSoonDays: number };
   };
   theme: {
     colors: Record<string, Hex>;
@@ -203,7 +223,7 @@ export const tripConfig: TripConfig = {
   // 1 ── GLOBAL APP SETTINGS ────────────────────────────────────────────────
   app: {
     name: 'honeymoon-app',
-    version: '2.3.0',
+    version: '3.0.0',
     storageKeyPrefix: 'honeymoon', // → rates cache key, install-dismiss key, etc.
   },
   mode: {
@@ -353,6 +373,15 @@ export const tripConfig: TripConfig = {
       maxAgeMs: 12 * 60 * 60 * 1000,
     },
     fallbackRates: { JPY: 53.9, THB: 11.1 }, // foreign units per 1 base (ILS)
+    // Shared current-rate doc: first client past the TTL fetches & writes it,
+    // both phones read the same value (fewer external calls, consistent rates).
+    sharedRates: { docPath: 'meta/rates', enabled: true },
+    // Daily snapshots (doc id = UTC date) → the FX history sparkline on Budget.
+    rateHistory: { collection: 'rateHistory', maxPoints: 60, enabled: true },
+    // Client-side burn-rate / projection card.
+    analytics: { enabled: true },
+    // Optional atomic running-total doc — OFF by default (recompute is free at N≈2).
+    summaryDoc: { path: 'summary/budget', enabled: false },
   },
 
   // ── TAXONOMIES & SEED-DRIVEN LISTS ────────────────────────────────────────
@@ -501,6 +530,9 @@ export const tripConfig: TripConfig = {
       apps: 'useful_apps',
       settingsConfig: 'settings/config',
       settingsDayNames: 'settings/dayNames',
+      ratesMeta: 'meta/rates',         // shared current FX rate (L2)
+      rateHistory: 'rateHistory',      // daily FX snapshots (history graph)
+      summaryBudget: 'summary/budget', // optional atomic running total (#8, off)
     },
     requiredBackendKeys: ['apiKey', 'projectId', 'appId'],
     firebaseEnvVarNames: {
@@ -515,6 +547,16 @@ export const tripConfig: TripConfig = {
     offlinePersistence: true,
     analyticsEnabled: true, // only if measurementId present
     mapsUrlTemplate: 'https://www.google.com/maps/search/?api=1&query={query}',
+    // Address → lat/lng geocoder. Free, no API key (Nominatim/OpenStreetMap),
+    // called client-side ONLY on explicit save, rate-limited, and fail-soft.
+    // countryCodes:'' → auto-derived from destinations[].iso in the derived layer.
+    geocoder: {
+      enabled: true,
+      urlTemplate: 'https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q={query}',
+      countryCodes: '',
+      minIntervalMs: 1100,
+      cachePrefix: 'honeymoon_geo_v1',
+    },
     // Access allow-list — sourced from VITE_ALLOWED_EMAILS in .env (comma-separated)
     // so real addresses stay OUT of the (public) repo. Feeds the auth bouncer; the
     // same env var generates firestore.rules. The `import.meta.env &&` guard keeps it
@@ -537,6 +579,12 @@ export const tripConfig: TripConfig = {
       countdownChipTickMs: 60000,
     },
     haptics: { enabled: true },
+    // Walking-distance estimates for itinerary day optimization (#7).
+    // maxWalkLegKm: legs longer than this are treated as transit, not walking
+    // (so an airport→city hop isn't shown as a multi-hour "walk").
+    geo: { walkingSpeedKmh: 4.5, nearbyRadiusKm: 2, maxWalkLegKm: 4 },
+    // In-app (no-push) reminders (#9): tasks due within N days flagged "soon".
+    nudges: { enabled: true, taskDueSoonDays: 3 },
   },
 
   // ── THEME (injected as CSS custom properties at boot) ─────────────────────
