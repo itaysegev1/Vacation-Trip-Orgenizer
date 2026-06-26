@@ -153,50 +153,46 @@ export default function Ideas() {
 
   const isoFor = (countryId) => byId(DESTINATIONS, countryId)?.iso;
 
-  // Geocode an address → lat/lng AFTER the idea is saved. Fully decoupled and
-  // fail-soft: it can never block, delay or fail the save (geocode() returns null
-  // on any error/block/offline, and the follow-up write is best-effort).
-  const geocodeInBackground = (id, address, countryId, prevIdea) => {
-    if (!id || !address) return;
-    // Skip if the address is unchanged and we already have coordinates.
-    if (prevIdea && prevIdea.geocodedAddress === address && prevIdea.lat != null) return;
-    geocode(address, isoFor(countryId))
+  // What we geocode for an idea: its exact address if given, else its city — so
+  // ideas tagged only with a city (the common case) still get coordinates.
+  const locationQuery = (idea) => (idea.address?.trim() || idea.city?.trim() || '');
+
+  // Geocode AFTER the idea is saved. Fully decoupled and fail-soft: it can never
+  // block, delay or fail the save (geocode() returns null on any error/block/
+  // offline, and the follow-up write is best-effort).
+  const geocodeInBackground = (id, idea, prevIdea) => {
+    const q = locationQuery(idea);
+    if (!id || !q) return;
+    // Skip if the location is unchanged and we already have coordinates.
+    if (prevIdea && prevIdea.geocodedAddress === q && prevIdea.lat != null) return;
+    geocode(q, isoFor(idea.country))
       .then((coords) => {
         if (coords) {
-          update(id, {
-            lat: coords.lat,
-            lng: coords.lng,
-            geocodedAddress: address,
-            geocodedAt: Date.now(),
-          }).catch(() => {});
+          update(id, { lat: coords.lat, lng: coords.lng, geocodedAddress: q, geocodedAt: Date.now() }).catch(() => {});
         }
       })
       .catch(() => {});
   };
 
-  // Lazy backfill: geocode existing ideas that have an address but no coords yet
-  // (e.g. created before geocoding existed), so the proximity feature works on
-  // legacy data. Serialized + rate-limited inside geocode(); fail-soft; demo no-op
-  // (those ideas already have coords). Each id is attempted at most once.
+  // Lazy backfill: geocode existing ideas that have a location (address OR city)
+  // but no coords yet (e.g. created before geocoding existed), so proximity works
+  // on legacy data. Serialized + rate-limited inside geocode(); fail-soft; demo
+  // no-op (those ideas already have coords). Each id is attempted at most once.
   const geocodeAttempted = useRef(new Set());
   useEffect(() => {
     let cancelled = false;
     (async () => {
       const pending = docs.filter(
-        (d) => !hasCoords(d) && d.address?.trim() && !geocodeAttempted.current.has(d.id)
+        (d) => !hasCoords(d) && locationQuery(d) && !geocodeAttempted.current.has(d.id)
       );
       for (const idea of pending) {
         if (cancelled) break;
         geocodeAttempted.current.add(idea.id);
-        const coords = await geocode(idea.address, isoFor(idea.country));
+        const q = locationQuery(idea);
+        const coords = await geocode(q, isoFor(idea.country));
         if (cancelled) break;
         if (coords) {
-          update(idea.id, {
-            lat: coords.lat,
-            lng: coords.lng,
-            geocodedAddress: idea.address,
-            geocodedAt: Date.now(),
-          }).catch(() => {});
+          update(idea.id, { lat: coords.lat, lng: coords.lng, geocodedAddress: q, geocodedAt: Date.now() }).catch(() => {});
         }
       }
     })();
@@ -225,7 +221,7 @@ export default function Ideas() {
     Promise.resolve(
       editingId ? update(editingId, data) : add({ ...data, createdBy: profile?.id || SHARED.id })
     )
-      .then((ref) => geocodeInBackground(editingId || ref?.id, data.address, data.country, prevIdea))
+      .then((ref) => geocodeInBackground(editingId || ref?.id, data, prevIdea))
       .catch((err) => console.error('idea save failed', err));
   };
 
