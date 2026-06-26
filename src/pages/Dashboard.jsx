@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'motion/react';
 import Countdown from '../components/Countdown';
@@ -11,11 +11,15 @@ import {
   APPROVED_STATUS_IDS,
   ITINERARY_START,
   ITINERARY_END,
+  NUDGES,
+  BUDGET_WARN_THRESHOLD,
+  BAR_COLORS,
   destinationForDate,
   ymd,
   CONTENT,
   fmt,
 } from '../lib/tripConfig';
+import { summarizeTaskUrgency, budgetLevel } from '../lib/nudges';
 import { listContainer, listItem } from '../lib/motionVariants';
 
 const fmtDate = (d) =>
@@ -115,8 +119,69 @@ export default function Dashboard() {
     packing: `${packDone}/${packing.length}`,
   };
 
+  // In-app nudges (no push): overdue/soon tasks + budget pressure.
+  const nudgeMessages = useMemo(() => {
+    if (!NUDGES.enabled) return [];
+    const msgs = [];
+    const urg = summarizeTaskUrgency(tasks, today, NUDGES.taskDueSoonDays);
+    if (urg.overdue > 0) msgs.push({ key: 'overdue', tone: 'over', text: fmt(CONTENT.nudges.overdue, { count: urg.overdue }) });
+    else if (urg.soon > 0) msgs.push({ key: 'soon', tone: 'warn', text: fmt(CONTENT.nudges.dueSoon, { count: urg.soon }) });
+    const bl = budgetLevel(spent, budget, BUDGET_WARN_THRESHOLD);
+    if (bl === 'over') msgs.push({ key: 'budget', tone: 'over', text: fmt(CONTENT.nudges.overBudget, { amount: formatILS(spent - budget) }) });
+    else if (bl === 'warn') msgs.push({ key: 'budget', tone: 'warn', text: CONTENT.nudges.nearBudget });
+    return msgs;
+  }, [tasks, today, spent, budget]);
+
+  // Dismissal is keyed by a signature of the current nudges (+ the day), so a
+  // NEW or more-urgent nudge re-appears even if an earlier one was dismissed today.
+  const nudgeSig = nudgeMessages.map((m) => `${m.key}:${m.tone}`).join('|');
+  const dismissKey = `honeymoon_nudge_dismissed_${today}`;
+  const [dismissedSig, setDismissedSig] = useState(() => {
+    try {
+      return localStorage.getItem(dismissKey) || '';
+    } catch {
+      return '';
+    }
+  });
+  const showNudges = nudgeMessages.length > 0 && dismissedSig !== nudgeSig;
+  const dismissNudges = () => {
+    try {
+      localStorage.setItem(dismissKey, nudgeSig);
+    } catch {
+      /* ignore */
+    }
+    setDismissedSig(nudgeSig);
+  };
+
   return (
     <div>
+      {/* In-app nudge banner (dismissible for the day) */}
+      {showNudges && (
+        <motion.div
+          initial={{ opacity: 0, y: -8 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mb-4 flex items-start gap-2 rounded-2xl border border-white/70 bg-white/85 p-3 shadow-soft"
+        >
+          <div className="min-w-0 flex-1 space-y-1">
+            {nudgeMessages.map((m) => (
+              <p
+                key={m.key}
+                className="text-sm font-medium"
+                style={{ color: m.tone === 'over' ? BAR_COLORS.over : BAR_COLORS.warn }}
+              >
+                {m.text}
+              </p>
+            ))}
+          </div>
+          <button
+            onClick={dismissNudges}
+            aria-label={CONTENT.nudges.dismiss}
+            className="shrink-0 rounded-full bg-petal px-2 py-0.5 text-xs font-semibold text-ink-soft active:scale-95 transition"
+          >
+            ✕
+          </button>
+        </motion.div>
+      )}
       {/* Hero */}
       <motion.section
         initial={{ opacity: 0, y: 14 }}

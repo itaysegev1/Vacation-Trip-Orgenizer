@@ -1,38 +1,24 @@
 import { useMemo, useState } from 'react';
 import { motion } from 'motion/react';
 import { useCollection } from '../lib/useCollection';
-import { APP_CATEGORIES } from '../lib/tripConfig';
+import {
+  APP_CATEGORIES,
+  APP_COUNTRY,
+  APP_COUNTRY_TABS,
+  APP_GENERAL,
+  DESTINATIONS,
+  SEED_APPS,
+} from '../lib/tripConfig';
 import { input, labelCls, btnPrimary, btnGhost } from '../lib/ui';
 import { listContainer, listItem, tap, prefersReducedMotion } from '../lib/motionVariants';
 import Modal from '../components/Modal';
 import ConfirmDialog from '../components/ConfirmDialog';
 import EmptyState from '../components/EmptyState';
 
-const COUNTRY_TABS = [
-  { id: 'all', label: 'הכל', flag: '✨' },
-  { id: 'japan', label: 'יפן', flag: '🇯🇵' },
-  { id: 'thailand', label: 'תאילנד', flag: '🇹🇭' },
-  { id: 'general', label: 'כללי', flag: '🌐' },
-];
-
-const APP_COUNTRY = {
-  japan: { flag: '🇯🇵', label: 'יפן' },
-  thailand: { flag: '🇹🇭', label: 'תאילנד' },
-  general: { flag: '🌐', label: 'כללי' },
-};
-
-const SEED_APPS = [
-  { name: 'GO (מוניות)', country: 'japan', category: 'taxi', link: 'https://go.goinc.jp/' },
-  { name: 'Japan Travel — NAVITIME', country: 'japan', category: 'transit', link: 'https://japantravel.navitime.com/' },
-  { name: 'Tabelog', country: 'japan', category: 'dining', link: 'https://tabelog.com/' },
-  { name: 'Grab', country: 'thailand', category: 'taxi', link: 'https://www.grab.com/th/' },
-  { name: 'Bolt', country: 'thailand', category: 'taxi', link: 'https://bolt.eu/' },
-  { name: 'ViaBus', country: 'thailand', category: 'transit', link: 'https://www.viabus.co/' },
-  { name: 'Google Maps', country: 'general', category: 'navigation', link: 'https://maps.google.com/' },
-  { name: 'Google Translate', country: 'general', category: 'translation', link: 'https://translate.google.com/' },
-];
-
-const EMPTY = { name: '', country: 'japan', category: 'taxi', link: '' };
+// New app defaults to the first destination (config-driven, no hardcoded leg).
+const DEFAULT_COUNTRY = DESTINATIONS[0]?.id || APP_GENERAL.id;
+const DEFAULT_CATEGORY = APP_CATEGORIES[0]?.id || 'taxi';
+const EMPTY = { name: '', country: DEFAULT_COUNTRY, category: DEFAULT_CATEGORY, link: '' };
 
 const normalizeUrl = (url) => {
   const u = (url || '').trim();
@@ -58,7 +44,7 @@ export default function Apps() {
       APP_CATEGORIES.map((c) => ({
         ...c,
         items: filtered
-          .filter((a) => (a.category || 'taxi') === c.id)
+          .filter((a) => (a.category || DEFAULT_CATEGORY) === c.id)
           .sort((a, b) => (a.name || '').localeCompare(b.name || '')),
       })).filter((g) => g.items.length > 0),
     [filtered]
@@ -107,7 +93,7 @@ export default function Apps() {
 
       {/* Country tabs — premium segmented control with a sliding pill */}
       <div className="mb-4 flex gap-1 rounded-2xl bg-white/60 p-1">
-        {COUNTRY_TABS.map((c) => {
+        {APP_COUNTRY_TABS.map((c) => {
           const active = country === c.id;
           return (
             <button
@@ -175,7 +161,7 @@ export default function Apps() {
               </h2>
               <motion.div variants={listContainer} initial="hidden" animate="show" className="space-y-2">
                 {group.items.map((app) => {
-                  const c = APP_COUNTRY[app.country] || APP_COUNTRY.general;
+                  const c = APP_COUNTRY[app.country] || APP_COUNTRY[APP_GENERAL.id];
                   return (
                     <motion.div
                       key={app.id}

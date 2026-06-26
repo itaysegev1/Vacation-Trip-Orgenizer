@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { useCollection, useDocument } from '../lib/useCollection';
 import {
@@ -11,7 +11,10 @@ import {
   destinationForDate,
   themeFor,
   NEUTRAL_ACCENT,
+  GEO_SETTINGS,
 } from '../lib/tripConfig';
+import { hasCoords, haversineKm, fmtDistance, fmtWalk } from '../lib/geo';
+import { nearestNeighborOrder, dayStats } from '../lib/optimizeDay';
 import { input, labelCls, btnPrimary } from '../lib/ui';
 import { listContainer, tap } from '../lib/motionVariants';
 import Modal from '../components/Modal';
@@ -52,7 +55,7 @@ export default function Itinerary() {
   const defaultDay =
     days.find((d) => d.dateStr === todayStr)?.dateStr || days[0]?.dateStr || ITINERARY_START;
   const [selected, setSelected] = useState(defaultDay);
-  const [leg, setLeg] = useState('all'); // 'all' | 'japan' | 'thailand'
+  const [leg, setLeg] = useState('all'); // 'all' | a destination id (from config)
 
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(EMPTY);
@@ -60,6 +63,7 @@ export default function Itinerary() {
   const [nameModal, setNameModal] = useState(false);
   const [nameInput, setNameInput] = useState('');
   const [slotMenu, setSlotMenu] = useState(null); // { item, x, y } — long-press move-to-slot
+  const [showRoute, setShowRoute] = useState(false); // expand the recommended day route
 
   const openSlotMenu = (item, pos) => {
     if (navigator.vibrate) navigator.vibrate(60);
@@ -105,6 +109,35 @@ export default function Itinerary() {
     docs.forEach((d) => (c[d.date] = (c[d.date] || 0) + 1));
     return c;
   }, [docs]);
+
+  // Recommended walking route for the selected day: collect the day's stops that
+  // have coordinates (the item's own, or its linked idea's), order them by
+  // proximity, and estimate total distance / walking time. Display-only.
+  const dayRoute = useMemo(() => {
+    const all = SLOTS.flatMap((s) => itemsBySlot[s.id] || []);
+    // Collect the day's LOCATED stops (item's own coords or its linked idea's).
+    // Items without a location (e.g. "rest", or an airport with no coords) are
+    // simply skipped; a route shows whenever ≥2 stops are located.
+    const stops = all
+      .map((it) => {
+        const linked = it.linkedIdeaId && ideas.find((i) => i.id === it.linkedIdeaId);
+        const src = hasCoords(it) ? it : hasCoords(linked) ? linked : null;
+        return src ? { id: it.id, title: it.title, lat: src.lat, lng: src.lng } : null;
+      })
+      .filter(Boolean);
+    if (stops.length < 2) return null;
+    const ordered = nearestNeighborOrder(stops, null);
+    return {
+      ordered,
+      stats: dayStats(ordered, {
+        kmh: GEO_SETTINGS.walkingSpeedKmh,
+        maxWalkLegKm: GEO_SETTINGS.maxWalkLegKm,
+      }),
+    };
+  }, [itemsBySlot, ideas]);
+
+  // Collapse the route panel when switching days, so it doesn't carry over.
+  useEffect(() => setShowRoute(false), [selected]);
 
   const openNew = (slot) => {
     setForm({ ...EMPTY, slot });
@@ -221,6 +254,43 @@ export default function Itinerary() {
         </span>
         <span className="text-rose-deep">✏️</span>
       </button>
+
+      {/* Recommended walking route for the day (only when ≥2 stops have coords) */}
+      {dayRoute && (
+        <div className="mt-3 rounded-2xl border border-white/70 bg-white/70 p-3 shadow-soft">
+          <button
+            onClick={() => setShowRoute((v) => !v)}
+            className="flex w-full items-center justify-between gap-2 text-right"
+          >
+            <span className="font-display text-rose-deep">🗺️ מסלול מומלץ ליום</span>
+            <span className="text-sm text-ink-soft">
+              {fmtDistance(dayRoute.stats.totalKm)}
+              {dayRoute.stats.walkMin > 0 ? ` · ~${fmtWalk(dayRoute.stats.walkMin)}` : ''}
+              {dayRoute.stats.hasTransit ? ' · כולל מעבר 🚆' : ''} {showRoute ? '▴' : '▾'}
+            </span>
+          </button>
+          {showRoute && (
+            <ol className="mt-2 space-y-1 text-sm text-ink">
+              {dayRoute.ordered.map((s, i) => {
+                const leg = i > 0 ? haversineKm(dayRoute.ordered[i - 1], s) : null;
+                const transit = leg != null && leg > GEO_SETTINGS.maxWalkLegKm;
+                return (
+                  <li key={s.id} className="flex items-center justify-between gap-2">
+                    <span className="truncate">
+                      {i + 1}. {s.title}
+                    </span>
+                    {leg != null && (
+                      <span className="shrink-0 text-xs text-ink-soft">
+                        {transit ? '🚆' : '🚶'} {fmtDistance(leg)}
+                      </span>
+                    )}
+                  </li>
+                );
+              })}
+            </ol>
+          )}
+        </div>
+      )}
 
       {/* Slots */}
       <div className="mt-3 space-y-4 lg:grid lg:grid-cols-3 lg:gap-4 lg:space-y-0">

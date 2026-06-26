@@ -24,6 +24,11 @@ const addDays = (s, n) => {
   return ymd(d);
 };
 
+// Relative to the REAL current day — so demo always has a live overdue / due-soon
+// task (the trip dates are far in the future and would never be overdue).
+const REAL_TODAY = ymd(new Date());
+const daysFromToday = (n) => addDays(REAL_TODAY, n);
+
 // Travellers (fallbacks keep it safe for any roster size)
 const A = TRAVELLERS[0]?.id || SHARED.id; // primary traveller
 const B = TRAVELLERS[1]?.id || A; // second traveller
@@ -38,6 +43,30 @@ const FX1 = FOREIGN[1] || FX0; // second foreign (THB)
 const rateOf = (code) => config.budget.fallbackRates[code] || 1;
 const toBase = (amount, code) => Math.round(amount / rateOf(code)); // → amount in base currency
 
+// Shared current-rate doc (L2 cache) — read by useRates() in demo (no network).
+const RATES_DOC = { base: config.budget.baseCurrency, updatedAt: new Date().getTime(), source: 'demo' };
+FOREIGN.forEach((code) => {
+  RATES_DOC[code] = rateOf(code);
+});
+
+// 7 days of fake FX history (UTC dates, gently trending) for the Budget sparkline.
+const utcAgo = (n) => {
+  const d = new Date();
+  d.setUTCDate(d.getUTCDate() - n);
+  return d.toISOString().slice(0, 10);
+};
+const buildRateHistory = () =>
+  Array.from({ length: 7 }, (_, k) => {
+    const i = 6 - k; // 6 = oldest … 0 = today (UTC)
+    const t = k - 3; // -3 … +3 for a gentle slope
+    const entry = { date: utcAgo(i), base: config.budget.baseCurrency };
+    FOREIGN.forEach((code, idx) => {
+      const slope = idx === 0 ? 0.004 : -0.006; // each currency drifts differently
+      entry[code] = Math.round(rateOf(code) * (1 + t * slope) * 10) / 10;
+    });
+    return entry;
+  });
+
 // Destination ids (for ideas / apps tagging)
 const cA = D0.id; // first destination id (japan)
 const cB = D1.id; // second destination id (thailand)
@@ -50,20 +79,25 @@ const stamp = (arr) => arr.map((d) => ({ id: genId(), createdAt: { seconds: next
 
 const collections = {
   ideas: stamp([
-    { name: 'מקדש פושימי אינארי', country: cA, city: 'קיוטו', address: '68 Fukakusa Yabunouchicho, Fushimi Ward, Kyoto', category: 'culture', status: 'approved', link: 'https://maps.google.com', notes: 'אלפי שערי טורי אדומים — ללכת מוקדם בבוקר', createdBy: B },
-    { name: 'אומאקאסה סושי', country: cA, city: 'טוקיו', category: 'food', status: 'booked', link: '', notes: 'הזמנו ל-19:00', createdBy: A },
-    { name: 'הר פוג׳י — קוואגוצ׳יקו', country: cA, city: 'יאמאנאשי', category: 'nature', status: 'maybe', link: '', notes: '', createdBy: A },
-    { name: 'שכונת שיבויה בלילה', country: cA, city: 'טוקיו', category: 'nightlife', status: 'idea', link: '', notes: '', createdBy: B },
-    { name: 'איי פי פי — שייט', country: cB, city: 'קראבי', category: 'nature', status: 'approved', link: '', notes: 'סנורקלינג במפרץ מאיה', createdBy: A },
-    { name: 'שוק צ׳אטוצ׳אק', country: cB, city: 'בנגקוק', category: 'shopping', status: 'maybe', link: '', notes: 'רק בסופ״ש', createdBy: B },
-    { name: 'קורס בישול תאילנדי', country: cB, city: 'צ׳יאנג מאי', category: 'activity', status: 'idea', link: '', notes: '', createdBy: SH },
+    { name: 'מקדש פושימי אינארי', country: cA, city: 'קיוטו', address: '68 Fukakusa Yabunouchicho, Fushimi Ward, Kyoto', lat: 34.9671, lng: 135.7727, category: 'culture', status: 'approved', link: 'https://maps.google.com', notes: 'אלפי שערי טורי אדומים — ללכת מוקדם בבוקר', createdBy: B },
+    { name: 'אומאקאסה סושי', country: cA, city: 'טוקיו', lat: 35.6717, lng: 139.765, category: 'food', status: 'booked', link: '', notes: 'הזמנו ל-19:00', createdBy: A },
+    { name: 'הר פוג׳י — קוואגוצ׳יקו', country: cA, city: 'יאמאנאשי', lat: 35.5171, lng: 138.7689, category: 'nature', status: 'maybe', link: '', notes: '', createdBy: A },
+    { name: 'שכונת שיבויה בלילה', country: cA, city: 'טוקיו', lat: 35.6595, lng: 139.7005, category: 'nightlife', status: 'idea', link: '', notes: '', createdBy: B },
+    { name: 'איי פי פי — שייט', country: cB, city: 'קראבי', lat: 7.7407, lng: 98.7784, category: 'nature', status: 'approved', link: '', notes: 'סנורקלינג במפרץ מאיה', createdBy: A },
+    { name: 'שוק צ׳אטוצ׳אק', country: cB, city: 'בנגקוק', lat: 13.7999, lng: 100.5503, category: 'shopping', status: 'maybe', link: '', notes: 'רק בסופ״ש', createdBy: B },
+    { name: 'קורס בישול תאילנדי', country: cB, city: 'צ׳יאנג מאי', lat: 18.7883, lng: 98.9853, category: 'activity', status: 'idea', link: '', notes: '', createdBy: SH },
   ]),
   itinerary: stamp([
+    // Arrival day: includes the airport transfer → intentionally NOT fully located,
+    // so no "recommended route" is shown (a route would be meaningless here).
     { date: D0.startDate, slot: 'morning', title: 'נחיתה בנאריטה + רכבת לטוקיו', location: 'נמל תעופה נאריטה', notes: 'לקנות Suica', linkedIdeaId: '', order: 0 },
-    { date: D0.startDate, slot: 'afternoon', title: 'צ׳ק-אין + שיבויה קרוסינג', location: 'שיבויה', notes: '', linkedIdeaId: '', order: 0 },
-    { date: D0.startDate, slot: 'evening', title: 'ארוחת ערב — סושי', location: 'גינזה', notes: '', linkedIdeaId: '', order: 0 },
-    { date: addDays(D0.startDate, 1), slot: 'morning', title: 'שוק צׄוקיג׳י', location: 'טוקיו', notes: '', linkedIdeaId: '', order: 0 },
-    { date: addDays(D0.startDate, 1), slot: 'afternoon', title: 'מקדש סנסו-ג׳י', location: 'אסקוסה', notes: '', linkedIdeaId: '', order: 0 },
+    { date: D0.startDate, slot: 'afternoon', title: 'צ׳ק-אין + שיבויה קרוסינג', location: 'שיבויה', lat: 35.6595, lng: 139.7005, notes: '', linkedIdeaId: '', order: 0 },
+    { date: D0.startDate, slot: 'evening', title: 'ארוחת ערב — סושי', location: 'גינזה', lat: 35.6717, lng: 139.765, notes: '', linkedIdeaId: '', order: 0 },
+    // Day 2: a fully-placed Tokyo day → shows a sensible route (a short Asakusa
+    // walk + one cross-town transit hop, so it demonstrates both leg types).
+    { date: addDays(D0.startDate, 1), slot: 'morning', title: 'שוק צׄוקיג׳י', location: 'טוקיו', lat: 35.6654, lng: 139.7707, notes: '', linkedIdeaId: '', order: 0 },
+    { date: addDays(D0.startDate, 1), slot: 'afternoon', title: 'מקדש סנסו-ג׳י', location: 'אסקוסה', lat: 35.7148, lng: 139.7967, notes: '', linkedIdeaId: '', order: 0 },
+    { date: addDays(D0.startDate, 1), slot: 'evening', title: 'רחוב נאקאמיסה', location: 'אסקוסה', lat: 35.7119, lng: 139.7966, notes: '', linkedIdeaId: '', order: 0 },
   ]),
   expenses: stamp([
     { title: 'מלון בטוקיו (3 לילות)', amount: 75000, currency: FX0, amountILS: toBase(75000, FX0), rateUsed: rateOf(FX0), category: 'lodging', paidBy: A, date: D0.startDate },
@@ -75,6 +109,9 @@ const collections = {
     { title: 'להזמין כרטיסי טיסה', type: 'task', assignee: SH, dueDate: addDays(WEDDING, -120), done: true },
     { title: 'להחליף כסף (ין + באט)', type: 'task', assignee: A, dueDate: addDays(D0.startDate, -6), done: false },
     { title: 'לקנות ביטוח נסיעות', type: 'task', assignee: B, dueDate: addDays(WEDDING, -15), done: false },
+    // Live nudge demos (relative to real today): one overdue, one due-soon.
+    { title: 'לחדש דרכון', type: 'task', assignee: A, dueDate: daysFromToday(-2), done: false },
+    { title: 'להזמין טרנספר משדה התעופה', type: 'task', assignee: B, dueDate: daysFromToday(2), done: false },
     { title: 'דרכון בתוקף', type: 'packing', category: 'documents', assignee: SH, done: true },
     { title: 'כרטיסי טיסה מודפסים', type: 'packing', category: 'documents', assignee: A, done: false },
     { title: 'מטען נייד', type: 'packing', category: 'electronics', assignee: A, done: false },
@@ -89,9 +126,10 @@ const collections = {
     { type: 'train', title: 'טוקיו → קיוטו', fields: { date: addDays(D0.startDate, 4), time: '09:30', trainNo: 'Nozomi 21', car: '7', passengers: SH, [seatA]: '12A', [seatB]: '12B', confirmation: 'JR-8842' } },
     { type: 'attraction', title: 'דיסנילנד טוקיו', fields: { date: addDays(D0.startDate, 2), time: '09:00', address: 'Maihama, Urayasu, Chiba', addressLocal: '千葉県浦安市舞浜1-1', passengers: SH, confirmation: 'TDR-99182', notes: '1-Day Passport' } },
     { type: 'restaurant', title: 'אומאקאסה סושי גינזה', fields: { date: addDays(D0.startDate, 1), time: '19:00', partySize: '2', address: 'Ginza, Tokyo', addressLocal: '東京都中央区銀座', confirmation: 'OMK-5521' } },
-    { type: 'accommodation', title: 'מלון בטוקיו', fields: { address: 'שינג׳וקו, טוקיו', addressLocal: '東京都新宿区西新宿2-8-1', checkIn: D0.startDate, checkOut: addDays(D0.startDate, 3), confirmation: 'BK-552190', phone: '+81357890000' } },
-    { type: 'accommodation', title: 'רזורט בקראבי', fields: { address: 'Ao Nang, Krabi', addressLocal: 'อ่าวนาง กระบี่ 81180', checkIn: addDays(D1.startDate, 1), checkOut: addDays(D1.startDate, 5), confirmation: 'AGD-77410' } },
+    { type: 'accommodation', title: 'מלון בטוקיו', fields: { address: 'שינג׳וקו, טוקיו', addressLocal: '東京都新宿区西新宿2-8-1', lat: 35.6896, lng: 139.6917, checkIn: D0.startDate, checkOut: addDays(D0.startDate, 3), confirmation: 'BK-552190', phone: '+81357890000' } },
+    { type: 'accommodation', title: 'רזורט בקראבי', fields: { address: 'Ao Nang, Krabi', addressLocal: 'อ่าวนาง กระบี่ 81180', lat: 8.0306, lng: 98.8214, checkIn: addDays(D1.startDate, 1), checkOut: addDays(D1.startDate, 5), confirmation: 'AGD-77410' } },
   ]),
+  rateHistory: stamp(buildRateHistory()),
   useful_apps: stamp([
     { name: 'GO (מוניות)', country: cA, category: 'taxi', link: 'https://go.goinc.jp/' },
     { name: 'Japan Travel — NAVITIME', country: cA, category: 'transit', link: 'https://japantravel.navitime.com/' },
@@ -106,6 +144,12 @@ const collections = {
 
 const singleDocs = {
   'settings/config': { budgetTotalILS: config.budget.defaultTotal },
+  'meta/rates': RATES_DOC,
+  // Optional atomic running total (#8, off by default) — derived from the seed.
+  'summary/budget': {
+    totalILS: collections.expenses.reduce((s, e) => s + (e.amountILS || 0), 0),
+    count: collections.expenses.length,
+  },
   'settings/dayNames': {
     [D0.startDate]: 'מלון בשינג׳וקו, טוקיו',
     [addDays(D0.startDate, 1)]: 'מלון בשינג׳וקו, טוקיו',
@@ -155,6 +199,19 @@ export function demoSubDoc(path, cb) {
 
 export function demoSaveDoc(path, data) {
   singleDocs[path] = { ...(singleDocs[path] || {}), ...data };
+  emitDoc(path);
+  return Promise.resolve();
+}
+
+// Atomic-increment a single doc's numeric fields (mirrors Firestore increment()
+// for demo mode). Used by budgetSummary's applyExpenseDelta when #8 is enabled.
+export function demoIncrement(path, deltas) {
+  const cur = singleDocs[path] || {};
+  const next = { ...cur };
+  Object.entries(deltas).forEach(([k, v]) => {
+    next[k] = (next[k] || 0) + v;
+  });
+  singleDocs[path] = next;
   emitDoc(path);
   return Promise.resolve();
 }

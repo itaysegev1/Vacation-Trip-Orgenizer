@@ -14,6 +14,12 @@ import { fmt } from '../config/content';
 export const ymd = (d) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
+// UTC YYYY-MM-DD — a single, timezone-independent "day". Used ONLY for the
+// global FX-rate snapshot id so two phones in different timezones (e.g. one in
+// Tokyo, one on a layover) never create two docs for the same day. Trip/day
+// logic keeps using local `ymd`.
+export const utcDay = (d = new Date()) => d.toISOString().slice(0, 10);
+
 // Parse a local "YYYY-MM-DD" into a LOCAL-midnight Date — identical instant to
 // the old `new Date(year, monthIndex, day, 0, 0, 0)` form.
 const toDate = (s) => new Date(`${s}T00:00:00`);
@@ -54,13 +60,10 @@ export const TRIP = {
 // First & last day shown in the itinerary (YYYY-MM-DD)
 export const ITINERARY_START = config.trip.startDate;
 export const ITINERARY_END = config.trip.endDate;
-// First leg ends / second leg begins on this date (the single boundary used by
-// the current two-destination logic; Step 3 generalizes this to N legs).
-export const THAILAND_FROM = dests[1].startDate;
 
-// Which destination a local "YYYY-MM-DD" falls in — replaces the old binary
-// `< THAILAND_FROM` boundary so ANY number of legs Just Works. Returns a
-// destination id. Dates outside every range clamp to the first / last leg.
+// Which destination a local "YYYY-MM-DD" falls in — works for ANY number of
+// legs (no binary boundary). Returns a destination id. Dates outside every
+// range clamp to the first / last leg.
 export function destinationForDate(dateStr) {
   if (!dateStr) return dests[0].id;
   const hit = dests.find((d) => dateStr >= d.startDate && dateStr <= d.endDate);
@@ -145,6 +148,7 @@ export const DESTINATIONS = config.destinations.map((d) => ({
   name: d.name,
   label: d.name,
   flag: d.flag,
+  iso: d.iso,
   startDate: d.startDate,
   endDate: d.endDate,
   currencyCode: d.currencyCode,
@@ -200,6 +204,41 @@ export const APP_CATEGORIES = config.taxonomies.appCategories.map((c) => ({
   emoji: c.emoji,
 }));
 
+// ── Useful-Apps surfaces (Apps page) — fully config-driven ──────────────────
+// The per-destination tabs come straight from DESTINATIONS; the "all" and
+// "general" (destination-agnostic) buckets come from content.apps. No literal
+// japan/thailand anywhere.
+export const APP_GENERAL = {
+  id: 'general',
+  label: config.content.apps.generalTab.label,
+  flag: config.content.apps.generalTab.emoji,
+};
+
+// app.country → { flag, label } for the card byline + the form's country picker.
+export const APP_COUNTRY = (() => {
+  const m = {};
+  DESTINATIONS.forEach((d) => {
+    m[d.id] = { flag: d.flag, label: d.label };
+  });
+  m[APP_GENERAL.id] = { flag: APP_GENERAL.flag, label: APP_GENERAL.label };
+  return m;
+})();
+
+// Segmented filter tabs: All · <each destination> · General.
+export const APP_COUNTRY_TABS = [
+  { id: 'all', label: config.content.apps.allTab.label, flag: config.content.apps.allTab.emoji },
+  ...DESTINATIONS.map((d) => ({ id: d.id, label: d.label, flag: d.flag })),
+  { id: APP_GENERAL.id, label: APP_GENERAL.label, flag: APP_GENERAL.flag },
+];
+
+// Recommended sample apps (one-tap seed) — from config.seed.apps.
+export const SEED_APPS = config.seed.apps.map((a) => ({
+  name: a.name,
+  country: a.country,
+  category: a.category,
+  link: a.link,
+}));
+
 // ── Currencies → object keyed by code (order: foreign-by-destination, then base) ──
 export const CURRENCIES = {};
 [
@@ -215,6 +254,28 @@ export const DEFAULT_BUDGET_ILS = config.budget.defaultTotal;
 
 // Ignore settlement balances smaller than this (in base currency).
 export const SETTLEMENT_THRESHOLD = config.budget.settlementThreshold;
+
+// ── Smart-feature config surfaces (Spark-tier additions) ─────────────────────
+// Shared FX rate doc (L2 cache) + daily history snapshots + budget analytics.
+export const SHARED_RATES = config.budget.sharedRates;     // { docPath, enabled }
+export const RATE_HISTORY = config.budget.rateHistory;     // { collection, maxPoints, enabled }
+export const ANALYTICS = config.budget.analytics;          // { enabled }
+export const SUMMARY_DOC = config.budget.summaryDoc;       // { path, enabled } — off by default
+
+// Geocoder — countryCodes auto-derived from destinations[].iso when blank, so a
+// re-skinned trip biases to its own countries with no extra config.
+export const GEOCODER = {
+  ...config.infra.geocoder,
+  countryCodes:
+    config.infra.geocoder.countryCodes ||
+    dests.map((d) => String(d.iso || '').toLowerCase()).filter(Boolean).join(','),
+};
+
+// Walking-speed / nearby-radius for itinerary optimization; in-app nudge config.
+export const GEO_SETTINGS = config.settings.geo;           // { walkingSpeedKmh, nearbyRadiusKm }
+export const NUDGES = config.settings.nudges;              // { enabled, taskDueSoonDays }
+export const BUDGET_WARN_THRESHOLD = config.budget.warnThreshold;
+export const BAR_COLORS = config.budget.barColors;         // { over, warn, ok }
 
 // Lookup helper
 export const byId = (list, id) => list.find((x) => x.id === id);

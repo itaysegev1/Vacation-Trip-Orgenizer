@@ -2,7 +2,8 @@ import { useMemo, useState } from 'react';
 import { motion } from 'motion/react';
 import { useCollection } from '../lib/useCollection';
 import { useAuth } from '../context/AuthContext';
-import { COUPLE, PACKING_CATEGORIES, SHARED, byId } from '../lib/tripConfig';
+import { COUPLE, PACKING_CATEGORIES, SHARED, NUDGES, ymd, byId } from '../lib/tripConfig';
+import { taskUrgency } from '../lib/nudges';
 import { triggerHaptic } from '../lib/haptics';
 import { fireConfetti } from '../lib/confetti';
 import { input, labelCls, btnPrimary } from '../lib/ui';
@@ -34,6 +35,14 @@ function Checkbox({ done, onClick }) {
 // remount every row (and re-fire animations) on each Firestore re-render.
 function Row({ item, onToggle, onEdit }) {
   const assignee = byId(Object.values(COUPLE), item.assignee);
+  // In-app nudge: colour the due-date chip when a task is overdue / due soon.
+  const urgency = taskUrgency(item, ymd(new Date()), NUDGES.taskDueSoonDays);
+  const dueChipCls =
+    urgency === 'overdue'
+      ? 'bg-rose-deep text-white'
+      : urgency === 'soon'
+        ? 'bg-gold-soft text-rose-deep'
+        : 'bg-petal text-rose-deep';
   return (
     <motion.li
       variants={listItem}
@@ -48,8 +57,8 @@ function Row({ item, onToggle, onEdit }) {
         <span className="mr-2 text-sm text-ink-soft">{assignee?.emoji}</span>
       </button>
       {item.dueDate && (
-        <span className="shrink-0 rounded-full bg-petal px-2.5 py-0.5 text-xs font-semibold text-rose-deep">
-          {fmtDate(item.dueDate)}
+        <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-semibold ${dueChipCls}`}>
+          {urgency === 'overdue' ? '⏰ ' : ''}{fmtDate(item.dueDate)}
         </span>
       )}
     </motion.li>

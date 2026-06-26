@@ -77,6 +77,28 @@ export const content = {
     signOut: 'התנתקות',
   },
 
+  // Ideas page — proximity sort.
+  ideas: {
+    proximityLabel: '📍 לפי קרבה',
+    proximityHint: 'בחרו מדינה אחת כדי למיין לפי קרבה',
+  },
+
+  // Apps page — the generic (non-destination) tabs. Per-destination tabs derive
+  // from the configured destinations; these two buckets are destination-agnostic.
+  apps: {
+    allTab: { label: 'הכל', emoji: '✨' },
+    generalTab: { label: 'כללי', emoji: '🌐' },
+  },
+
+  // In-app reminder banner (no push). {count}/{amount} filled by fmt().
+  nudges: {
+    overdue: '{count} משימות באיחור ⏰',
+    dueSoon: '{count} משימות מתקרבות 📌',
+    overBudget: 'חריגה מהתקציב — {amount} מעל היעד ⚠️',
+    nearBudget: 'מתקרבים לתקרת התקציב 📈',
+    dismiss: 'הבנתי',
+  },
+
   // Bottom/side navigation labels (icons resolve from the route, not here).
   nav: [
     { to: '/', label: 'בית', fullLabel: 'בית', end: true },

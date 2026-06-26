@@ -19,7 +19,14 @@ import {
   SHARED,
   SETTLEMENT_THRESHOLD,
   DEFAULT_BUDGET_ILS,
-  THAILAND_FROM,
+  DESTINATIONS,
+  LEG_THEMES,
+  destinationForDate,
+  ITINERARY_START,
+  ITINERARY_END,
+  ANALYTICS,
+  BAR_COLORS,
+  BUDGET_WARN_THRESHOLD,
   ymd,
   byId,
 } from '../lib/tripConfig';
@@ -29,14 +36,18 @@ import { AnimatePresence } from 'motion/react';
 import Modal from '../components/Modal';
 import SwipeableRow from '../components/SwipeableRow';
 import DonutChart from '../components/DonutChart';
+import LineChart from '../components/LineChart';
 import EmptyState from '../components/EmptyState';
+import { computeBudgetAnalytics } from '../lib/budgetAnalytics';
+import { useRateHistory } from '../lib/useRateHistory';
 import { useUndo } from '../context/UndoContext';
 
 const todayStr = () => ymd(new Date()); // local date (avoids UTC day-shift)
 const fmtDate = (s) =>
   new Intl.DateTimeFormat('he-IL', { day: 'numeric', month: 'short' }).format(new Date(s));
-// Which leg a date falls in — the default for the "related to" destination.
-const legOfDate = (d) => ((d || '') >= THAILAND_FROM ? 'thailand' : 'japan');
+// Short numeric date for chart X-axis labels (local-midnight parse).
+const shortDate = (s) =>
+  new Intl.DateTimeFormat('he-IL', { day: 'numeric', month: 'numeric' }).format(new Date(`${s}T00:00:00`));
 
 // Minimal "who owes whom" settlement: greedily match debtors to creditors.
 // For two travellers this yields exactly one transaction (or none if balanced).
@@ -67,6 +78,7 @@ export default function Budget() {
   const { docs, add, update, remove } = useCollection('expenses');
   const { data: config, save: saveConfig } = useDocument('settings/config');
   const { rates, loading: ratesLoading, refresh } = useRates();
+  const { series: rateSeries, points: ratePoints } = useRateHistory(rates);
   const { profile } = useAuth();
   const { requestDelete, hiddenIds } = useUndo();
 
@@ -83,7 +95,7 @@ export default function Budget() {
       category: EXPENSE_CATEGORIES[0]?.id || 'food',
       paidBy: profile?.id || SHARED.id,
       date: todayStr(),
-      linkedDestination: legOfDate(todayStr()),
+      linkedDestination: destinationForDate(todayStr()),
       linkedActivity: '',
     }),
     [profile]
@@ -108,17 +120,32 @@ export default function Budget() {
     return EXPENSE_CATEGORIES.map((c) => ({ ...c, total: map[c.id] || 0 })).filter((c) => c.total > 0);
   }, [visible, rates]);
 
-  // Japan leg vs Thailand leg — manual link wins, else fall back to the date.
+  // Client-side burn-rate / projection + spend-per-day trend (no backend).
+  const analytics = useMemo(
+    () =>
+      ANALYTICS.enabled
+        ? computeBudgetAnalytics(visible, {
+            today: todayStr(),
+            tripStart: ITINERARY_START,
+            tripEnd: ITINERARY_END,
+            budget,
+            ilsOf,
+            warnThreshold: BUDGET_WARN_THRESHOLD,
+          })
+        : null,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [visible, rates, budget]
+  );
+
+  // Spend per destination — manual link wins, else fall back to the date.
+  // Keyed by destination id (config-driven), so it generalizes to any N legs.
   const byLeg = useMemo(() => {
-    let japan = 0;
-    let thailand = 0;
+    const totals = Object.fromEntries(DESTINATIONS.map((d) => [d.id, 0]));
     visible.forEach((e) => {
-      const v = ilsOf(e);
-      const dest = e.linkedDestination || legOfDate(e.date);
-      if (dest === 'thailand') thailand += v;
-      else japan += v;
+      const id = e.linkedDestination || destinationForDate(e.date);
+      if (totals[id] != null) totals[id] += ilsOf(e);
     });
-    return { japan, thailand, max: Math.max(japan, thailand, 1) };
+    return { totals, max: Math.max(1, ...Object.values(totals)) };
   }, [visible, rates]);
 
   const split = useMemo(() => {
@@ -155,7 +182,7 @@ export default function Budget() {
       ...EMPTY,
       ...e,
       amount: String(e.amount ?? ''),
-      linkedDestination: e.linkedDestination || legOfDate(e.date),
+      linkedDestination: e.linkedDestination || destinationForDate(e.date),
       linkedActivity: e.linkedActivity || '',
     });
     setEditing(e);
@@ -178,7 +205,7 @@ export default function Budget() {
       paidBy: form.paidBy,
       date: form.date || todayStr(),
       // Manual "related to" link (destination + specific activity).
-      linkedDestination: form.linkedDestination || legOfDate(form.date),
+      linkedDestination: form.linkedDestination || destinationForDate(form.date),
       linkedActivity: form.linkedActivity.trim(),
     };
     // Don't await: offline the write stays pending until reconnect; the local
@@ -250,6 +277,73 @@ export default function Budget() {
         </div>
       </div>
 
+      {/* FX rate trend — one axed chart per currency (¥/฿ have different scales) */}
+      {rateSeries.length > 0 && ratePoints > 1 && (
+        <div className="mt-4 rounded-2xl border border-white/70 bg-white/70 p-4 shadow-soft">
+          <h2 className="mb-1 font-display text-lg text-rose-deep">מגמת שער 📈</h2>
+          <p className="mb-2 text-xs text-ink-soft">כמה {BASE_CURRENCY.symbol}1 שווה לאורך זמן</p>
+          <div className="space-y-4">
+            {rateSeries.map((s) => (
+              <LineChart
+                key={s.key}
+                title={s.label}
+                values={s.values}
+                labels={s.dates.map(shortDate)}
+                color={s.color}
+                formatY={(v) => `${v.toFixed(s.rateDigits)}${s.symbol}`}
+                animate={false}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Pace / projection — client-side analytics */}
+      {analytics && (
+        <div className="mt-4 rounded-2xl border border-white/70 bg-white/70 p-4 shadow-soft">
+          <h2 className="mb-2 font-display text-lg text-rose-deep">קצב והערכה 📈</h2>
+          {analytics.phase === 'pre' && (
+            <p className="text-sm text-ink">
+              עוד <b>{analytics.daysUntilTrip}</b> ימים לטיול · הוזמן עד כה{' '}
+              <b style={{ color: BAR_COLORS[analytics.verdict] }}>{formatILS(analytics.spent)}</b> (
+              {Math.round(analytics.pct * 100)}% מהתקציב)
+            </p>
+          )}
+          {analytics.phase === 'during' && (
+            <>
+              <p className="text-sm text-ink">
+                קצב: <b>{formatILS(analytics.burnPerDay)}</b>/יום · בקצב הזה עד סוף הטיול:{' '}
+                <b style={{ color: BAR_COLORS[analytics.verdict] }}>{formatILS(analytics.projectedTotal)}</b> (
+                {Math.round((analytics.projectedTotal / budget) * 100)}%
+                {analytics.verdict === 'over' ? ' ⚠️' : ''})
+              </p>
+              <p className="mt-1 text-xs text-ink-soft">
+                נשארו {analytics.daysRemaining} ימים · {formatILS(analytics.safeDaily)}/יום כדי לעמוד ביעד
+              </p>
+            </>
+          )}
+          {analytics.phase === 'post' && (
+            <p className="text-sm text-ink">
+              סה״כ בטיול:{' '}
+              <b style={{ color: BAR_COLORS[analytics.verdict] }}>{formatILS(analytics.spent)}</b> מתוך{' '}
+              {formatILS(budget)}
+            </p>
+          )}
+          {analytics.dailySeries.length > 1 && (
+            <div className="mt-3">
+              <p className="mb-1 text-xs text-ink-soft">הוצאה יומית (₪)</p>
+              <LineChart
+                values={analytics.dailySeries.map((d) => d.total)}
+                labels={analytics.dailySeries.map((d) => shortDate(d.date))}
+                color={BAR_COLORS[analytics.verdict]}
+                formatY={(v) => formatILS(v)}
+                zeroBased
+              />
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Split — one card per traveller */}
       <div className="mt-4 grid grid-cols-2 gap-3">
         {split.perTraveller.map((t) => (
@@ -294,39 +388,28 @@ export default function Budget() {
         </div>
       )}
 
-      {/* Japan vs Thailand leg comparison */}
-      {(byLeg.japan > 0 || byLeg.thailand > 0) && (
+      {/* Destination spend comparison — one bar per configured destination */}
+      {Object.values(byLeg.totals).some((v) => v > 0) && (
         <div className="mt-4 rounded-2xl border border-white/70 bg-white/70 p-4 shadow-soft">
           <h2 className="mb-3 font-display text-lg text-rose-deep">השוואת יעדים</h2>
           <div className="space-y-3">
-            <div>
-              <div className="mb-1 flex justify-between text-sm">
-                <span>🇯🇵 יפן</span>
-                <span className="font-semibold text-ink">{formatILS(byLeg.japan)}</span>
+            {DESTINATIONS.map((d) => (
+              <div key={d.id}>
+                <div className="mb-1 flex justify-between text-sm">
+                  <span>{d.flag} {d.label}</span>
+                  <span className="font-semibold text-ink">{formatILS(byLeg.totals[d.id] || 0)}</span>
+                </div>
+                <div className="h-2.5 overflow-hidden rounded-full bg-petal">
+                  <motion.div
+                    className="h-full rounded-full"
+                    style={{ backgroundColor: LEG_THEMES[d.id]?.accent || 'var(--color-sakura)' }}
+                    initial={{ width: 0 }}
+                    animate={{ width: `${((byLeg.totals[d.id] || 0) / byLeg.max) * 100}%` }}
+                    transition={{ type: 'spring', stiffness: 120, damping: 20 }}
+                  />
+                </div>
               </div>
-              <div className="h-2.5 overflow-hidden rounded-full bg-petal">
-                <motion.div
-                  className="h-full rounded-full bg-sakura"
-                  initial={{ width: 0 }}
-                  animate={{ width: `${(byLeg.japan / byLeg.max) * 100}%` }}
-                  transition={{ type: 'spring', stiffness: 120, damping: 20 }}
-                />
-              </div>
-            </div>
-            <div>
-              <div className="mb-1 flex justify-between text-sm">
-                <span>🇹🇭 תאילנד</span>
-                <span className="font-semibold text-ink">{formatILS(byLeg.thailand)}</span>
-              </div>
-              <div className="h-2.5 overflow-hidden rounded-full bg-jade-soft">
-                <motion.div
-                  className="h-full rounded-full bg-jade"
-                  initial={{ width: 0 }}
-                  animate={{ width: `${(byLeg.thailand / byLeg.max) * 100}%` }}
-                  transition={{ type: 'spring', stiffness: 120, damping: 20 }}
-                />
-              </div>
-            </div>
+            ))}
           </div>
         </div>
       )}

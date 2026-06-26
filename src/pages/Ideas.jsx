@@ -1,10 +1,11 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { useCollection } from '../lib/useCollection';
 import { useAuth } from '../context/AuthContext';
 import {
   COUNTRIES,
+  DESTINATIONS,
   IDEA_CATEGORIES,
   IDEA_STATUSES,
   SLOTS,
@@ -13,9 +14,12 @@ import {
   themeFor,
   NEUTRAL_ACCENT,
   SHARED,
+  CONTENT,
 } from '../lib/tripConfig';
 import { input, labelCls, btnPrimary, btnGhost } from '../lib/ui';
 import { listContainer, tap } from '../lib/motionVariants';
+import { geocode } from '../lib/geocode';
+import { sortByDistance, distanceFrom, hasCoords } from '../lib/geo';
 import Modal from '../components/Modal';
 import EmptyState from '../components/EmptyState';
 import SwipeableRow from '../components/SwipeableRow';
@@ -33,7 +37,7 @@ const STATUS_OPTIONS = IDEA_STATUSES.map((s) => ({
 
 const EMPTY = {
   name: '',
-  country: Object.values(COUNTRIES)[0]?.id || 'japan',
+  country: Object.values(COUNTRIES)[0]?.id || '',
   city: '',
   address: '',
   category: IDEA_CATEGORIES[0]?.id || 'food',
@@ -84,6 +88,8 @@ export default function Ideas() {
   const [fCountry, setFCountry] = useState('all');
   const [fCategory, setFCategory] = useState('all');
   const [fStatus, setFStatus] = useState('all');
+  const [proximity, setProximity] = useState(false);
+  const [originId, setOriginId] = useState('');
 
   const [editing, setEditing] = useState(null); // null | EMPTY-clone | existing idea
   const [form, setForm] = useState(EMPTY);
@@ -145,6 +151,61 @@ export default function Ideas() {
   };
   const close = () => setEditing(null);
 
+  const isoFor = (countryId) => byId(DESTINATIONS, countryId)?.iso;
+
+  // Geocode an address → lat/lng AFTER the idea is saved. Fully decoupled and
+  // fail-soft: it can never block, delay or fail the save (geocode() returns null
+  // on any error/block/offline, and the follow-up write is best-effort).
+  const geocodeInBackground = (id, address, countryId, prevIdea) => {
+    if (!id || !address) return;
+    // Skip if the address is unchanged and we already have coordinates.
+    if (prevIdea && prevIdea.geocodedAddress === address && prevIdea.lat != null) return;
+    geocode(address, isoFor(countryId))
+      .then((coords) => {
+        if (coords) {
+          update(id, {
+            lat: coords.lat,
+            lng: coords.lng,
+            geocodedAddress: address,
+            geocodedAt: Date.now(),
+          }).catch(() => {});
+        }
+      })
+      .catch(() => {});
+  };
+
+  // Lazy backfill: geocode existing ideas that have an address but no coords yet
+  // (e.g. created before geocoding existed), so the proximity feature works on
+  // legacy data. Serialized + rate-limited inside geocode(); fail-soft; demo no-op
+  // (those ideas already have coords). Each id is attempted at most once.
+  const geocodeAttempted = useRef(new Set());
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const pending = docs.filter(
+        (d) => !hasCoords(d) && d.address?.trim() && !geocodeAttempted.current.has(d.id)
+      );
+      for (const idea of pending) {
+        if (cancelled) break;
+        geocodeAttempted.current.add(idea.id);
+        const coords = await geocode(idea.address, isoFor(idea.country));
+        if (cancelled) break;
+        if (coords) {
+          update(idea.id, {
+            lat: coords.lat,
+            lng: coords.lng,
+            geocodedAddress: idea.address,
+            geocodedAt: Date.now(),
+          }).catch(() => {});
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [docs]);
+
   const save = (e) => {
     e.preventDefault();
     if (!form.name.trim()) return;
@@ -158,10 +219,14 @@ export default function Ideas() {
       link: normalizeUrl(form.link),
       notes: form.notes.trim(),
     };
-    (editing?.id ? update(editing.id, data) : add({ ...data, createdBy: profile?.id || SHARED.id })).catch(
-      (err) => console.error('idea save failed', err)
-    );
-    close();
+    const editingId = editing?.id;
+    const prevIdea = editing;
+    close(); // optimistic: close immediately, write + geocode in the background
+    Promise.resolve(
+      editingId ? update(editingId, data) : add({ ...data, createdBy: profile?.id || SHARED.id })
+    )
+      .then((ref) => geocodeInBackground(editingId || ref?.id, data.address, data.country, prevIdea))
+      .catch((err) => console.error('idea save failed', err));
   };
 
   const filtered = useMemo(() => {
@@ -176,6 +241,23 @@ export default function Ideas() {
       )
       .sort((a, b) => tsOf(b) - tsOf(a));
   }, [docs, search, fCountry, fCategory, fStatus, hiddenIds]);
+
+  // Proximity sort (only meaningful within one country, with ≥2 geocoded ideas).
+  const coordIdeas = useMemo(() => filtered.filter(hasCoords), [filtered]);
+  // Discoverable (control is visible) whenever the view has ≥2 geocoded ideas;
+  // applicable (sort can actually run) only within a single country, since
+  // crow-flies sorting across Japan↔Thailand is meaningless.
+  const proximityDiscoverable = coordIdeas.length >= 2;
+  const proximityApplicable = fCountry !== 'all' && coordIdeas.length >= 2;
+  const origin = useMemo(
+    () => coordIdeas.find((i) => i.id === originId) || coordIdeas[0] || null,
+    [coordIdeas, originId]
+  );
+  const showProximity = proximity && proximityApplicable && !!origin;
+  const displayed = useMemo(
+    () => (showProximity ? sortByDistance(filtered, origin) : filtered),
+    [filtered, showProximity, origin]
+  );
 
   // Dynamic accent: each destination's theme (falls back to the default leg).
   const theme = themeFor(fCountry);
@@ -237,6 +319,44 @@ export default function Ideas() {
         <ChipRow items={IDEA_STATUSES} value={fStatus} onChange={setFStatus} />
       </div>
 
+      {/* Proximity sort — visible whenever ≥2 ideas in view are geocoded. On the
+          "all" view it's shown but disabled with a hint (sort needs one country). */}
+      {proximityDiscoverable && (
+        <div className="mt-2 flex items-center gap-2">
+          <button
+            onClick={() => proximityApplicable && setProximity((p) => !p)}
+            disabled={!proximityApplicable}
+            className={`shrink-0 rounded-full px-3 py-1.5 text-sm font-semibold transition active:scale-95 ${
+              !proximityApplicable
+                ? 'bg-white/50 text-ink-soft/60'
+                : proximity
+                  ? 'bg-rose-deep text-white shadow-soft'
+                  : 'bg-white/70 text-ink-soft'
+            }`}
+          >
+            {CONTENT.ideas.proximityLabel}
+          </button>
+          {!proximityApplicable ? (
+            <span className="text-xs text-ink-soft">{CONTENT.ideas.proximityHint}</span>
+          ) : (
+            proximity && (
+              <select
+                className={`${input} min-w-0 flex-1`}
+                value={origin?.id || ''}
+                onChange={(e) => setOriginId(e.target.value)}
+                aria-label="נקודת מוצא"
+              >
+                {coordIdeas.map((i) => (
+                  <option key={i.id} value={i.id}>
+                    {i.name}
+                  </option>
+                ))}
+              </select>
+            )
+          )}
+        </div>
+      )}
+
       {/* List */}
       <div className="mt-4">
         {loading ? (
@@ -285,7 +405,7 @@ export default function Ideas() {
             className="grid gap-3 lg:grid-cols-2 xl:grid-cols-3"
           >
             <AnimatePresence>
-              {filtered.map((idea) => (
+              {displayed.map((idea) => (
                 <SwipeableRow key={idea.id} onDelete={() => deleteIdea(idea)}>
                   <IdeaCard
                     idea={idea}
@@ -293,6 +413,7 @@ export default function Ideas() {
                     onSchedule={() => openSchedule(idea)}
                     onLongPress={(pos) => openStatusMenu(idea, pos)}
                     onBadgeTap={(pos) => openStatusMenu(idea, pos)}
+                    distanceKm={showProximity ? distanceFrom(origin, idea) : undefined}
                   />
                 </SwipeableRow>
               ))}
