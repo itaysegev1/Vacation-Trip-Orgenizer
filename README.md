@@ -146,8 +146,8 @@ VITE_ALLOWED_EMAILS=you@gmail.com,partner@gmail.com
 
 ### 2d. Create the database
 **Firestore Database** → **Create database** → choose **Production mode** → pick a region
-(e.g. `eur3`). You'll upload the security rules in §4 — until then, production mode safely
-denies everything.
+(e.g. `eur3`). You'll generate & upload the security rules in §3/§5 — until then, production
+mode safely denies everything.
 
 ---
 
@@ -177,6 +177,42 @@ npm run generate-rules
 
 This rewrites `firestore.rules` from the env var (validating every entry is a real email).
 It also runs automatically before every deploy.
+
+#### Generating & deploying the rules
+
+`firestore.rules` is **git-ignored**, so a fresh clone won't contain it — you create it
+locally. `npm run generate-rules` reads `VITE_ALLOWED_EMAILS` from `.env` and writes a file
+like this:
+
+```js
+// firestore.rules  (AUTO-GENERATED — do not edit by hand)
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isAllowed() {
+      return request.auth != null
+        && request.auth.token.email in [
+          'you@gmail.com',
+          'partner@gmail.com'
+        ];
+    }
+    match /{document=**} { allow read, write: if isAllowed(); }
+  }
+}
+```
+
+Then push it to Firebase. Two ways:
+
+```bash
+npm run deploy                            # generates rules + builds + deploys rules & site (§5)
+# — or, to push ONLY the rules after editing the allow-list (no site rebuild): —
+npm run generate-rules
+firebase deploy --only firestore:rules
+```
+
+> ⚠️ The rules only take effect **after** you deploy them. Editing `.env` alone changes the
+> in-app bouncer on your next build, but the database stays on the previously-deployed rules
+> until you run a deploy.
 
 > 🔓 **Why an env var?** The bouncer runs client-side, so the allow-list is bundled into the
 > deployed JS regardless — this keeps the real addresses out of the **public repo + git
@@ -228,8 +264,8 @@ npm run deploy
 ```
 
 `npm run deploy` automatically runs the `predeploy` step first — it regenerates
-`firestore.rules` from your config, builds the app, then `firebase deploy` uploads **both**
-the security rules and the site. When it finishes you'll get a URL like
+`firestore.rules` from `VITE_ALLOWED_EMAILS` (§3), builds the app, then `firebase deploy`
+uploads **both** the security rules and the site. When it finishes you'll get a URL like
 `https://<your-project-id>.web.app`.
 
 **Install it on a phone (PWA):**
