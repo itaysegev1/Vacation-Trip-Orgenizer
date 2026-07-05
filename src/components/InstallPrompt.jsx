@@ -1,7 +1,17 @@
 import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { STORAGE_PREFIX } from '../lib/tripConfig';
 
-const DISMISS_KEY = 'pwa_install_dismissed_v1';
+const DISMISS_KEY = `${STORAGE_PREFIX}_install_dismissed_v1`;
+
+// localStorage can throw (blocked storage / private mode) — never crash the shell.
+const readDismissed = () => {
+  try {
+    return localStorage.getItem(DISMISS_KEY) === '1';
+  } catch {
+    return false;
+  }
+};
 
 const isStandalone = () =>
   window.matchMedia?.('(display-mode: standalone)').matches || window.navigator.standalone === true;
@@ -17,9 +27,7 @@ const isIOS = () => /iphone|ipad|ipod/i.test(window.navigator.userAgent) && !win
 export default function InstallPrompt() {
   const [deferred, setDeferred] = useState(null);
   const [iosHint, setIosHint] = useState(false);
-  const [dismissed, setDismissed] = useState(
-    () => localStorage.getItem(DISMISS_KEY) === '1'
-  );
+  const [dismissed, setDismissed] = useState(readDismissed);
 
   useEffect(() => {
     if (isStandalone()) return undefined;
@@ -53,7 +61,11 @@ export default function InstallPrompt() {
 
   const dismiss = () => {
     setDismissed(true);
-    localStorage.setItem(DISMISS_KEY, '1');
+    try {
+      localStorage.setItem(DISMISS_KEY, '1');
+    } catch {
+      /* ignore */
+    }
   };
 
   const show = !dismissed && (deferred || iosHint);

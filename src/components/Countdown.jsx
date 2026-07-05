@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { MILESTONES, CONTENT, fmt } from '../lib/tripConfig';
+import { MILESTONES, CONTENT, TIMINGS, fmt } from '../lib/tripConfig';
 
 function getParts(target) {
   const diff = Math.max(0, target.getTime() - Date.now());
@@ -17,7 +17,7 @@ const PAD = (n) => String(n).padStart(2, '0');
 function useParts(target) {
   const [t, setT] = useState(() => getParts(target));
   useEffect(() => {
-    const id = setInterval(() => setT(getParts(target)), 1000);
+    const id = setInterval(() => setT(getParts(target)), TIMINGS.countdownCardTickMs);
     return () => clearInterval(id);
   }, [target]);
   return t;
@@ -68,7 +68,7 @@ export default function Countdown() {
 export function CountdownChip() {
   const [, tick] = useState(0);
   useEffect(() => {
-    const id = setInterval(() => tick((n) => n + 1), 60000);
+    const id = setInterval(() => tick((n) => n + 1), TIMINGS.countdownChipTickMs);
     return () => clearInterval(id);
   }, []);
 

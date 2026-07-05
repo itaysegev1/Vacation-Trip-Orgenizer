@@ -14,6 +14,10 @@ import { isDemo } from './firebase';
 import { GEOCODER } from './tripConfig';
 
 let lastCall = 0; // module-level rate-limit clock (Nominatim policy ≤ 1 req/sec)
+// Serialize ALL network lookups through one promise chain — concurrent callers
+// (a save-time chain racing the legacy backfill) would otherwise read the same
+// stale `lastCall`, sleep the same duration, and burst past the 1 req/sec policy.
+let queue = Promise.resolve();
 
 const memoKey = (q) => `${GEOCODER.cachePrefix}:${q}`;
 
@@ -38,12 +42,25 @@ function writeMemo(q, val) {
  * @param biasCountryCodes optional ISO codes (e.g. 'jp') to bias the search to a
  *   specific country — more accurate than biasing to every trip country at once.
  */
-export async function geocode(address, biasCountryCodes) {
+export function geocode(address, biasCountryCodes) {
   const q = (address || '').trim().toLowerCase();
-  if (!q || !GEOCODER.enabled || isDemo) return null; // demo: never touch the network
+  if (!q || !GEOCODER.enabled || isDemo) return Promise.resolve(null); // demo: never touch the network
 
   const cached = readMemo(q);
-  if (cached) return cached.none ? null : cached; // memoized hit (or memoized miss)
+  if (cached) return Promise.resolve(cached.none ? null : cached); // memoized hit/miss — skips the queue
+
+  // Enqueue the actual lookup; the chain never rejects (fetchGeocode catches),
+  // but keep a .catch guard so one failure can't wedge the queue.
+  const run = queue.then(() => fetchGeocode(q, address, biasCountryCodes));
+  queue = run.catch(() => {});
+  return run;
+}
+
+async function fetchGeocode(q, address, biasCountryCodes) {
+  // Another queued caller may have resolved (and memoized) the same address
+  // while we waited our turn.
+  const cached = readMemo(q);
+  if (cached) return cached.none ? null : cached;
 
   // Client-side rate-limit so we honor the public-Nominatim usage policy.
   const wait = Math.max(0, GEOCODER.minIntervalMs - (Date.now() - lastCall));

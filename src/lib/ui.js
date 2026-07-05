@@ -1,3 +1,12 @@
+import { LINK_SCHEME } from './tripConfig';
+
+// Prepend the configured scheme to schemeless user-entered links (Apps / Ideas).
+export const normalizeUrl = (url) => {
+  const u = (url || '').trim();
+  if (!u) return '';
+  return /^[a-z][a-z0-9+.-]*:\/\//i.test(u) ? u : `${LINK_SCHEME}${u}`;
+};
+
 // Shared Tailwind class strings so every page looks consistent.
 export const input =
   'w-full rounded-2xl border border-line bg-white px-4 py-2.5 text-ink placeholder:text-ink-soft/50 outline-none transition focus:border-sakura focus:ring-2 focus:ring-sakura/30';

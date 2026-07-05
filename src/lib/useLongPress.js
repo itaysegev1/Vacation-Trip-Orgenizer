@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useRef } from 'react';
+import { TIMINGS } from './tripConfig';
 
 /**
  * SwipeableRow publishes its long-press canceller here so that the instant a
@@ -15,7 +16,10 @@ export const SwipeCancelContext = createContext(null);
  * Returns handlers to spread on the target element. `onClickCapture` swallows
  * the click that fires on release after a long-press.
  */
-export function useLongPress(onLongPress, { delay = 500, moveTolerance = 10 } = {}) {
+export function useLongPress(
+  onLongPress,
+  { delay = TIMINGS.longPressDelayMs, moveTolerance = TIMINGS.longPressMoveTolerancePx } = {}
+) {
   const timer = useRef(null);
   const origin = useRef(null);
   const fired = useRef(false);

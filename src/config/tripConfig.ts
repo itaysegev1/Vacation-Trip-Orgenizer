@@ -113,12 +113,15 @@ export interface DocType {
   walletOnly?: boolean;
   /** Rendered as one card per traveller (flights / trains / attractions). */
   perPassenger?: boolean;
+  /** Present → the type appears in the Wallet: chooser button label (singular)
+   *  and whether its section lays out as a two-column grid. */
+  wallet?: { chooserLabel: string; twoCols: boolean };
   fields: DocFieldDef[];
 }
 
 export interface TripConfig {
   app: { name: string; version: string; storageKeyPrefix: string };
-  mode: { isHoneymoon: boolean; justMarried: boolean; features: Record<string, boolean> };
+  mode: { isHoneymoon: boolean; features: Record<string, boolean> };
   locale: { language: string; direction: 'rtl' | 'ltr'; dateLocale: string };
   branding: {
     appName: string; shortName: string; tagline: string; description: string;
@@ -131,7 +134,6 @@ export interface TripConfig {
   guest: { label: string; emoji: string };
   /** Where the travellers depart from / return to (drives base currency,
    *  embassy framing, route titles, origin placeholder). */
-  homeCountry: { id: ID; label: string; flag: string; iso: string; currencyCode: ID };
   milestones: Milestone[];
   /** Itinerary bounds + post-trip label. year is derived but kept for seeds. */
   trip: { year: number; startDate: DateStr; endDate: DateStr; activeLabel: string };
@@ -194,6 +196,8 @@ export interface TripConfig {
       longPressMoveTolerancePx: number;
       countdownCardTickMs: number;
       countdownChipTickMs: number;
+      /** How often useToday() re-checks the local date (day rollover while the PWA stays alive). */
+      todayRefreshMs: number;
     };
     haptics: { enabled: boolean };
     /** Walking-distance estimates for itinerary day optimization. */
@@ -206,10 +210,19 @@ export interface TripConfig {
     fonts: { sans: string; display: string };
     shadows: { soft: string; float: string; glow: string };
     background: string;
-    ticket: { perforation: { teeth: number; minSize: number; maxSize: number } };
+    ticket: {
+      perforation: { teeth: number; minSize: number; maxSize: number };
+      /** Per-card-type accent palette for the Wallet tickets. */
+      accents: Record<string, { accent: Hex; soft: Hex; tint?: Hex }>;
+    };
     fallbackAccentDestinationId: ID; // theme fallback (was hardcoded 'japan')
     neutralAccent: string;           // "all"/no-destination filter accent
-    statTints: { ideas: Hex; itinerary: Hex; tasksDone: Hex; packing: Hex };
+    /** Decorative particle palettes/counts (falling petals, confetti bursts). */
+    effects: {
+      petalColors: Hex[];
+      confettiColors: Hex[];
+      petalCount: { app: number; auth: number };
+    };
   };
   seed: {
     flights: { title: string; fields: Record<string, string> }[];
@@ -223,12 +236,11 @@ export const tripConfig: TripConfig = {
   // 1 ── GLOBAL APP SETTINGS ────────────────────────────────────────────────
   app: {
     name: 'honeymoon-app',
-    version: '3.0.0',
+    version: '3.0.2',
     storageKeyPrefix: 'honeymoon', // → rates cache key, install-dismiss key, etc.
   },
   mode: {
     isHoneymoon: true,   // ↳ enables wedding milestone, "Just Married", 💕 copy, couple tagline
-    justMarried: false,  // flips to true automatically once the wedding date passes
     features: {
       ideas: true,
       itinerary: true,
@@ -263,7 +275,6 @@ export const tripConfig: TripConfig = {
   ],
   sharedParty: { id: 'both', name: 'שנינו', emoji: '💞' },
   guest: { label: 'אורח', emoji: '💕' },
-  homeCountry: { id: 'israel', label: 'ישראל', flag: '🇮🇱', iso: 'IL', currencyCode: 'ILS' },
 
   // 3 ── MILESTONES & DATES ──────────────────────────────────────────────────
   milestones: [
@@ -441,6 +452,7 @@ export const tripConfig: TripConfig = {
     documentTypes: [
       {
         id: 'flight', label: 'טיסות', emoji: '✈️', titleLabel: 'מסלול', titlePlaceholder: 'ישראל → יפן', perPassenger: true,
+        wallet: { chooserLabel: 'טיסה', twoCols: false },
         fields: [
           { key: 'date', label: 'תאריך המראה', type: 'date' },
           { key: 'time', label: 'שעת המראה', type: 'time' },
@@ -455,6 +467,7 @@ export const tripConfig: TripConfig = {
       },
       {
         id: 'train', label: 'רכבות', emoji: '🚄', titleLabel: 'מסלול', titlePlaceholder: 'טוקיו → קיוטו', perPassenger: true,
+        wallet: { chooserLabel: 'רכבת', twoCols: false },
         fields: [
           { key: 'date', label: 'תאריך', type: 'date' },
           { key: 'time', label: 'שעה', type: 'time' },
@@ -467,6 +480,7 @@ export const tripConfig: TripConfig = {
       },
       {
         id: 'attraction', label: 'אטרקציות', emoji: '🎟️', titleLabel: 'שם האטרקציה', titlePlaceholder: 'דיסנילנד טוקיו', walletOnly: true, perPassenger: true,
+        wallet: { chooserLabel: 'אטרקציה', twoCols: true },
         fields: [
           { key: 'date', label: 'תאריך', type: 'date' },
           { key: 'time', label: 'שעת כניסה', type: 'time' },
@@ -478,6 +492,7 @@ export const tripConfig: TripConfig = {
       },
       {
         id: 'restaurant', label: 'מסעדות', emoji: '🍽️', titleLabel: 'שם המסעדה', titlePlaceholder: 'אומאקאסה סושי', walletOnly: true,
+        wallet: { chooserLabel: 'מסעדה', twoCols: true },
         fields: [
           { key: 'date', label: 'תאריך', type: 'date' },
           { key: 'time', label: 'שעת הזמנה', type: 'time' },
@@ -490,6 +505,7 @@ export const tripConfig: TripConfig = {
       },
       {
         id: 'accommodation', label: 'לינה', emoji: '🏨', titleLabel: 'שם המקום', titlePlaceholder: 'מלון בקיוטו',
+        wallet: { chooserLabel: 'מלון', twoCols: true },
         fields: [
           { key: 'address', label: 'כתובת', type: 'text' },
           { key: 'addressLocal', label: 'כתובת בשפה המקומית (להראות לנהג מונית)', type: 'textarea' },
@@ -534,6 +550,9 @@ export const tripConfig: TripConfig = {
       rateHistory: 'rateHistory',      // daily FX snapshots (history graph)
       summaryBudget: 'summary/budget', // optional atomic running total (#8, off)
     },
+    // ⚠️ DOCUMENTATION-ONLY (not wired): Vite replaces import.meta.env.* statically,
+    // so src/lib/firebase.js must reference the env vars literally. These fields
+    // document that wiring; editing them changes nothing at runtime.
     requiredBackendKeys: ['apiKey', 'projectId', 'appId'],
     firebaseEnvVarNames: {
       apiKey: 'VITE_FIREBASE_API_KEY',
@@ -544,8 +563,8 @@ export const tripConfig: TripConfig = {
       appId: 'VITE_FIREBASE_APP_ID',
       measurementId: 'VITE_FIREBASE_MEASUREMENT_ID',
     },
-    offlinePersistence: true,
-    analyticsEnabled: true, // only if measurementId present
+    offlinePersistence: true, // documentation-only — firebase.js enables it unconditionally
+    analyticsEnabled: true, // documentation-only — analytics inits iff measurementId present
     mapsUrlTemplate: 'https://www.google.com/maps/search/?api=1&query={query}',
     // Address → lat/lng geocoder. Free, no API key (Nominatim/OpenStreetMap),
     // called client-side ONLY on explicit save, rate-limited, and fail-soft.
@@ -577,6 +596,7 @@ export const tripConfig: TripConfig = {
       longPressMoveTolerancePx: 10,
       countdownCardTickMs: 1000,
       countdownChipTickMs: 60000,
+      todayRefreshMs: 60000,
     },
     haptics: { enabled: true },
     // Walking-distance estimates for itinerary day optimization (#7).
@@ -604,10 +624,23 @@ export const tripConfig: TripConfig = {
     },
     background:
       'radial-gradient(1200px 600px at 80% -10%, #ffe9f0 0%, transparent 55%), radial-gradient(900px 500px at -10% 10%, #fff1e6 0%, transparent 50%), var(--color-cream)',
-    ticket: { perforation: { teeth: 34, minSize: 1, maxSize: 4 } },
+    ticket: {
+      perforation: { teeth: 34, minSize: 1, maxSize: 4 },
+      accents: {
+        flight: { accent: '#b85574', soft: '#f4a6b8' },
+        train: { accent: '#1f7a6f', soft: '#2fa395' },
+        attraction: { accent: '#3a8f84', soft: '#7fb8ae', tint: '#eaf5f2' },
+        restaurant: { accent: '#c79a4e', soft: '#d4af7a', tint: '#faf3e3' },
+        hotel: { accent: '#b8860b', soft: '#d4af7a' },
+      },
+    },
     fallbackAccentDestinationId: 'japan',
     neutralAccent: 'var(--color-rose-deep)',
-    statTints: { ideas: '#d6738a', itinerary: '#7fb8ae', tasksDone: '#d4af7a', packing: '#d6738a' },
+    effects: {
+      petalColors: ['#f4a6b8', '#fcd3de', '#ffe4ec', '#ec8fa6', '#f8c7d4'],
+      confettiColors: ['#f4a6b8', '#d6738a', '#d4af7a', '#7fb8ae', '#ffe4ec'],
+      petalCount: { app: 12, auth: 18 },
+    },
   },
 
   // ── SEED / SAMPLE DATA (one-tap seeds; demo dataset lives in demoStore) ────

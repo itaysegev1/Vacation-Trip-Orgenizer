@@ -1,6 +1,7 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
+import { useFocusTrap } from '../lib/useFocusTrap';
 
 const MENU_W = 248;
 
@@ -12,6 +13,8 @@ const MENU_W = 248;
  * options: [{ id, label, bg, dot }]
  */
 export default function QuickPickMenu({ open, x = 0, y = 0, title, options = [], currentId, onSelect, onClose }) {
+  const menuRef = useRef(null);
+  useFocusTrap(menuRef, open);
   const vw = typeof window !== 'undefined' ? window.innerWidth : 380;
   const vh = typeof window !== 'undefined' ? window.innerHeight : 800;
   const menuH = 64 + options.length * 50; // header + rows, for clamping
@@ -39,8 +42,10 @@ export default function QuickPickMenu({ open, x = 0, y = 0, title, options = [],
           <div className="absolute inset-0 bg-ink/25 backdrop-blur-[2px]" onClick={onClose} aria-hidden="true" />
 
           <motion.div
+            ref={menuRef}
             role="menu"
             aria-label={title}
+            tabIndex={-1}
             initial={{ opacity: 0, scale: 0.82 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.9 }}

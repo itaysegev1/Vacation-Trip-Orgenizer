@@ -1,12 +1,16 @@
 import { NavLink } from 'react-router-dom';
 import { motion } from 'motion/react';
 import { prefersReducedMotion } from '../lib/motionVariants';
-import { CONTENT } from '../lib/tripConfig';
+import { CONTENT, FEATURES } from '../lib/tripConfig';
 import { triggerHaptic } from '../lib/haptics';
 import NavIcon from './NavIcons';
 
 // Nav labels come from the content module; icons resolve from the route (NavIcon).
-export const TABS = CONTENT.nav;
+// A tab only shows when its feature flag is on (home has no flag and always shows) —
+// mirroring the route gating in Layout.
+export const TABS = CONTENT.nav.filter(
+  (tab) => tab.end || FEATURES[tab.to.slice(1)] !== false
+);
 
 export default function BottomNav() {
   return (

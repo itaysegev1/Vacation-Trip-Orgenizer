@@ -1,7 +1,8 @@
 import { useEffect, useRef } from 'react';
 import { useReducedMotion } from 'motion/react';
+import { EFFECTS } from '../lib/tripConfig';
 
-const COLORS = ['#F4A6B8', '#FCD3DE', '#FFE4EC', '#EC8FA6', '#F8C7D4'];
+const COLORS = EFFECTS.petalColors;
 
 /**
  * Ambient falling-sakura background drawn on a single canvas.

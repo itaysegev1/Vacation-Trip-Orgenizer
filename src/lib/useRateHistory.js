@@ -20,18 +20,20 @@ import { RATE_HISTORY, utcDay, legTheme } from './tripConfig';
 // ─────────────────────────────────────────────────────────────
 export function useRateHistory(rates) {
   const { docs, loading } = useCollection(RATE_HISTORY.collection);
-  const wroteRef = useRef(false);
+  // Latch by DAY (not a boolean) so a page kept mounted across UTC midnight
+  // still writes the new day's snapshot on the next rates/docs update.
+  const wroteForDayRef = useRef('');
 
   useEffect(() => {
-    if (!RATE_HISTORY.enabled || wroteRef.current) return;
+    const today = utcDay();
+    if (!RATE_HISTORY.enabled || wroteForDayRef.current === today) return;
     if (loading) return; // wait for the collection so we don't rewrite today every open
     if (!rates || !rates.updatedAt || rates.partial) return; // never snapshot fallback/partial rates
-    const today = utcDay();
     if (docs.some((d) => d.date === today)) {
-      wroteRef.current = true;
+      wroteForDayRef.current = today;
       return;
     }
-    wroteRef.current = true;
+    wroteForDayRef.current = today;
     const payload = { date: today, base: BASE_CURRENCY.code };
     FOREIGN_CURRENCIES.forEach((c) => {
       if (rates[c.code] != null) payload[c.code] = rates[c.code];
@@ -41,7 +43,11 @@ export function useRateHistory(rates) {
   }, [rates, docs, loading]);
 
   const series = useMemo(() => {
-    const sorted = [...docs].filter((d) => d.date).sort((a, b) => a.date.localeCompare(b.date));
+    const sorted = [...docs]
+      .filter((d) => d.date)
+      .sort((a, b) => a.date.localeCompare(b.date))
+      // Enforce the configured cap — chart the most recent N days only.
+      .slice(-RATE_HISTORY.maxPoints);
     return FOREIGN_CURRENCIES.map((c) => {
       const pts = sorted.filter((d) => d[c.code] != null);
       return {

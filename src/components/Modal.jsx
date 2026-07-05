@@ -1,15 +1,18 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence, useDragControls } from 'motion/react';
 import { sheetVariants } from '../lib/motionVariants';
+import { useFocusTrap } from '../lib/useFocusTrap';
 
 /**
  * Mobile-first bottom-sheet (centers as a card on larger screens).
  * Spring slide-up, frosted backdrop, drag-down-to-close, Esc-to-close,
- * and body-scroll lock while open.
+ * focus trap (aria-modal for real), and body-scroll lock while open.
  */
 export default function Modal({ open, onClose, title, children }) {
   const dragControls = useDragControls();
+  const sheetRef = useRef(null);
+  useFocusTrap(sheetRef, open);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -38,9 +41,11 @@ export default function Modal({ open, onClose, title, children }) {
             aria-hidden="true"
           />
           <motion.div
+            ref={sheetRef}
             role="dialog"
             aria-modal="true"
             aria-label={title}
+            tabIndex={-1}
             className="relative z-10 flex max-h-[92dvh] w-full max-w-md flex-col overflow-hidden rounded-t-[2rem] bg-cream shadow-2xl sm:rounded-[2rem]"
             variants={sheetVariants}
             initial="hidden"

@@ -43,10 +43,15 @@ body {
   min-height: 100dvh;
   font-family: var(--font-sans);
   color: var(--color-ink);
-  background:
+  /* Static fallback for the configured gradient — applyTheme injects
+     --app-background from theme.background at boot (everything after the
+     first comma in var() is the fallback value, commas included). */
+  background: var(
+    --app-background,
     radial-gradient(1200px 600px at 80% -10%, #ffe9f0 0%, transparent 55%),
     radial-gradient(900px 500px at -10% 10%, #fff1e6 0%, transparent 50%),
-    var(--color-cream);
+    var(--color-cream)
+  );
   background-attachment: fixed;
   overscroll-behavior-y: none;
 }

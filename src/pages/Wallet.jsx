@@ -1,8 +1,19 @@
 import { useMemo, useState } from 'react';
 import { motion } from 'motion/react';
 import { useCollection } from '../lib/useCollection';
-import { DOC_TYPES, SEED_FLIGHTS } from '../lib/docTypes';
-import { TRAVELLERS, SHARED, seatKey } from '../lib/tripConfig';
+import {
+  DOC_TYPES,
+  SEED_FLIGHTS,
+  WALLET_TYPES,
+  WALLET_TYPE_CHOOSER as TYPE_CHOOSER,
+  WALLET_SECTIONS as SECTIONS,
+  PER_PASSENGER_TYPES as PER_PASSENGER,
+  TRAVELLERS,
+  SHARED,
+  seatKey,
+  COLLECTIONS,
+  CONTENT,
+} from '../lib/tripConfig';
 import { input, labelCls, btnPrimary } from '../lib/ui';
 import { listContainer, listItem, tap } from '../lib/motionVariants';
 import { diffMinutes, layoverText } from '../lib/flightUtils';
@@ -10,27 +21,6 @@ import Modal from '../components/Modal';
 import ConfirmDialog from '../components/ConfirmDialog';
 import EmptyState from '../components/EmptyState';
 import { BoardingPass, TrainTicket, Voucher, HotelCard } from '../components/WalletCards';
-
-// Types the wallet manages (contacts/info stay in Documents).
-const WALLET_TYPES = ['flight', 'train', 'attraction', 'restaurant', 'accommodation'];
-// These are issued per traveller → render one card per passenger.
-const PER_PASSENGER = new Set(['flight', 'train', 'attraction']);
-
-const TYPE_CHOOSER = [
-  { id: 'flight', label: 'טיסה', emoji: '✈️' },
-  { id: 'train', label: 'רכבת', emoji: '🚄' },
-  { id: 'attraction', label: 'אטרקציה', emoji: '🎟️' },
-  { id: 'restaurant', label: 'מסעדה', emoji: '🍽️' },
-  { id: 'accommodation', label: 'מלון', emoji: '🏨' },
-];
-
-const SECTIONS = [
-  { type: 'flight', title: '✈️ טיסות', cols: false },
-  { type: 'train', title: '🚄 רכבות', cols: false },
-  { type: 'attraction', title: '🎟️ אטרקציות', cols: true },
-  { type: 'restaurant', title: '🍽️ מסעדות', cols: true },
-  { type: 'accommodation', title: '🏨 מלונות', cols: true },
-];
 
 // Expand a doc into the passenger(s) it should render a card for.
 function passengerCards(doc) {
@@ -59,7 +49,7 @@ function renderCard(doc, passenger, onEdit) {
 }
 
 export default function Wallet() {
-  const { docs, add, update, remove } = useCollection('documents');
+  const { docs, add, update, remove } = useCollection(COLLECTIONS.documents);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({ type: 'flight', title: '', fields: {} });
   const [toDelete, setToDelete] = useState(null);
@@ -78,6 +68,14 @@ export default function Wallet() {
     setForm({ type, title: '', fields: PER_PASSENGER.has(type) ? { passengers: SHARED.id } : {} });
     setEditing({});
   };
+  // Switching type inside the open modal keeps the title the user already
+  // typed; only the type-specific fields reset.
+  const switchType = (type) =>
+    setForm((fm) => ({
+      type,
+      title: fm.title,
+      fields: PER_PASSENGER.has(type) ? { passengers: SHARED.id } : {},
+    }));
   const openEdit = (doc) => {
     setForm({ type: doc.type, title: doc.title || '', fields: { ...(doc.fields || {}) } });
     setEditing(doc);
@@ -152,7 +150,7 @@ export default function Wallet() {
         <EmptyState
           emoji="🎫"
           title="הארנק עוד ריק"
-          subtitle="הוסיפו כרטיסי טיסה, שינקנסן, שוברי אטרקציות ומלונות — והם יחכו לכם כאן, יפים ומסודרים ✈️🚄🎟️🏨"
+          subtitle={CONTENT.wallet.emptySubtitle}
           action={
             <div className="flex flex-wrap justify-center gap-2">
               <button onClick={seedFlights} className="rounded-2xl bg-rose-deep px-4 py-2 font-semibold text-white shadow-soft active:scale-95 transition">
@@ -218,7 +216,7 @@ export default function Wallet() {
                   <button
                     type="button"
                     key={t.id}
-                    onClick={() => openNew(t.id)}
+                    onClick={() => switchType(t.id)}
                     className={`rounded-2xl py-2.5 text-sm font-semibold transition active:scale-95 ${
                       form.type === t.id ? 'bg-sakura text-white' : 'bg-petal text-ink-soft'
                     }`}
@@ -290,9 +288,9 @@ export default function Wallet() {
           {form.type === 'flight' &&
             (isConn ? (
               <>
-                {fld({ k: 'origin', label: 'מוצא', placeholder: 'תל אביב (TLV)' })}
-                {fld({ k: 'layoverCity', label: 'יעד אמצע (קונקשן)', placeholder: 'איסטנבול (IST)' })}
-                {fld({ k: 'finalDestination', label: 'יעד סופי', placeholder: 'טוקיו (NRT)' })}
+                {fld({ k: 'origin', label: 'מוצא', placeholder: CONTENT.wallet.flightPlaceholders.origin })}
+                {fld({ k: 'layoverCity', label: 'יעד אמצע (קונקשן)', placeholder: CONTENT.wallet.flightPlaceholders.layoverCity })}
+                {fld({ k: 'finalDestination', label: 'יעד סופי', placeholder: CONTENT.wallet.flightPlaceholders.finalDestination })}
                 <div className="grid grid-cols-2 gap-2">
                   {fld({ k: 'date', label: 'תאריך המראה', type: 'date' })}
                   {fld({ k: 'arrivalDate', label: 'תאריך נחיתה', type: 'date' })}
@@ -308,7 +306,7 @@ export default function Wallet() {
                     ⏱️ זמן מעבר: <b>{liveLayover}</b>
                   </p>
                 )}
-                {fld({ k: 'flightNo', label: 'מספרי טיסה', placeholder: 'TK785 / TK198', dir: 'ltr' })}
+                {fld({ k: 'flightNo', label: 'מספרי טיסה', placeholder: CONTENT.wallet.flightPlaceholders.flightNo, dir: 'ltr' })}
               </>
             ) : (
               <>
@@ -332,7 +330,7 @@ export default function Wallet() {
             <>
               {fld({ k: 'date', label: 'תאריך', type: 'date' })}
               {fld({ k: 'time', label: 'שעה', type: 'time' })}
-              {fld({ k: 'trainNo', label: 'רכבת / שינקנסן', placeholder: 'Nozomi 21', dir: 'ltr' })}
+              {fld({ k: 'trainNo', label: 'רכבת / שינקנסן', placeholder: CONTENT.wallet.trainNoPlaceholder, dir: 'ltr' })}
               {fld({ k: 'car', label: 'קרון', dir: 'ltr' })}
             </>
           )}

@@ -1,8 +1,7 @@
 import { useState } from 'react';
 import { motion } from 'motion/react';
 import { useCollection } from '../lib/useCollection';
-import { DOC_TYPES as TYPES, SEED_FLIGHTS } from '../lib/docTypes';
-import { DESTINATIONS } from '../lib/tripConfig';
+import { DOC_TYPES as TYPES, SEED_FLIGHTS, DESTINATIONS, parseLocalDate, COLLECTIONS, DATE_LOCALE } from '../lib/tripConfig';
 import { input, labelCls, btnPrimary } from '../lib/ui';
 import { listContainer, listItem, tap } from '../lib/motionVariants';
 import Modal from '../components/Modal';
@@ -24,10 +23,10 @@ const EMERGENCY = [
 ];
 
 const fmtDate = (s) =>
-  s ? new Intl.DateTimeFormat('he-IL', { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(s)) : '';
+  s ? new Intl.DateTimeFormat(DATE_LOCALE, { day: 'numeric', month: 'short', year: 'numeric' }).format(parseLocalDate(s)) : '';
 
 export default function Documents() {
-  const { docs, add, update, remove } = useCollection('documents');
+  const { docs, add, update, remove } = useCollection(COLLECTIONS.documents);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({ type: 'flight', title: '', fields: {} });
   const [toDelete, setToDelete] = useState(null);

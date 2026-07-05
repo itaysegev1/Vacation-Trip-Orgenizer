@@ -15,8 +15,10 @@ import {
   NEUTRAL_ACCENT,
   SHARED,
   CONTENT,
+  TIMINGS,
+  COLLECTIONS,
 } from '../lib/tripConfig';
-import { input, labelCls, btnPrimary, btnGhost } from '../lib/ui';
+import { input, labelCls, btnPrimary, btnGhost, normalizeUrl } from '../lib/ui';
 import { listContainer, tap } from '../lib/motionVariants';
 import { geocode } from '../lib/geocode';
 import { sortByDistance, distanceFrom, hasCoords } from '../lib/geo';
@@ -46,12 +48,6 @@ const EMPTY = {
   notes: '',
 };
 
-const normalizeUrl = (url) => {
-  const u = (url || '').trim();
-  if (!u) return '';
-  return /^https?:\/\//i.test(u) ? u : `https://${u}`;
-};
-
 const tsOf = (d) => d.createdAt?.seconds ?? Number.MAX_SAFE_INTEGER;
 
 function ChipRow({ items, value, onChange, allLabel = 'הכל' }) {
@@ -79,8 +75,8 @@ function ChipRow({ items, value, onChange, allLabel = 'הכל' }) {
 const DAYS = tripDays();
 
 export default function Ideas() {
-  const { docs, loading, add, update, remove } = useCollection('ideas');
-  const { add: addItineraryItem } = useCollection('itinerary');
+  const { docs, loading, add, update, remove } = useCollection(COLLECTIONS.ideas);
+  const { add: addItineraryItem } = useCollection(COLLECTIONS.itinerary);
   const { profile } = useAuth();
   const { requestDelete, hiddenIds } = useUndo();
 
@@ -138,7 +134,7 @@ export default function Ideas() {
     const label = byId(SLOTS, sched.slot)?.label || '';
     setToast(`✓ "${scheduling.name}" שובץ ל${label} 🗓️`);
     setScheduling(null);
-    setTimeout(() => setToast(''), 2800);
+    setTimeout(() => setToast(''), TIMINGS.toastDurationMs);
   };
 
   const openNew = () => {
@@ -213,6 +209,16 @@ export default function Ideas() {
             lat: res.coords.lat,
             lng: res.coords.lng,
             geocodedAddress: res.query,
+            geoSig: sig,
+            geocodedAt: Date.now(),
+          }).catch(() => {});
+        } else if (prevIdea && prevIdea.geoSig && prevIdea.geoSig !== sig && prevIdea.lat != null) {
+          // The address CHANGED but the new one didn't geocode — clear the old
+          // coords so proximity sort doesn't keep ranking by the abandoned spot.
+          update(id, {
+            lat: null,
+            lng: null,
+            geocodedAddress: null,
             geoSig: sig,
             geocodedAt: Date.now(),
           }).catch(() => {});
@@ -419,7 +425,7 @@ export default function Ideas() {
             <EmptyState
               emoji="🍣"
               title="עוד לא הוספתם רעיונות!"
-              subtitle="זמן לחפש סושי, מקדשים וחופים — הוסיפו את החלום הראשון שלכם ⛩️🏝️"
+              subtitle={CONTENT.ideas.emptySubtitle}
               action={
                 <button onClick={openNew} className={btnPrimary}>
                   הוספת רעיון ראשון
@@ -485,7 +491,7 @@ export default function Ideas() {
               className={input}
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
-              placeholder="למשל: מקדש פושימי אינארי"
+              placeholder={CONTENT.ideas.namePlaceholder}
               autoFocus
               required
             />
@@ -515,7 +521,7 @@ export default function Ideas() {
               className={input}
               value={form.city}
               onChange={(e) => setForm({ ...form, city: e.target.value })}
-              placeholder="קיוטו, טוקיו, בנגקוק…"
+              placeholder={CONTENT.ideas.cityPlaceholder}
             />
           </div>
 

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'motion/react';
 import Countdown from '../components/Countdown';
@@ -18,12 +18,16 @@ import {
   ymd,
   CONTENT,
   fmt,
+  STORAGE_PREFIX,
+  DATE_LOCALE,
+  COLLECTIONS,
 } from '../lib/tripConfig';
 import { summarizeTaskUrgency, budgetLevel } from '../lib/nudges';
+import { useToday } from '../lib/useToday';
 import { listContainer, listItem } from '../lib/motionVariants';
 
 const fmtDate = (d) =>
-  new Intl.DateTimeFormat('he-IL', { day: 'numeric', month: 'long' }).format(d);
+  new Intl.DateTimeFormat(DATE_LOCALE, { day: 'numeric', month: 'long' }).format(d);
 const toDate = (s) => new Date(`${s}T00:00:00`);
 
 // Current trip phase → hero copy. Derived from the destinations' date ranges
@@ -73,11 +77,11 @@ function StatCard({ to, emoji, value, label, tint }) {
 export default function Dashboard() {
   const { profile } = useAuth();
   const { rates } = useRates();
-  const { docs: expenses } = useCollection('expenses');
-  const { docs: ideas } = useCollection('ideas');
-  const { docs: itinerary } = useCollection('itinerary');
-  const { docs: tasks } = useCollection('tasks');
-  const { data: config } = useDocument('settings/config');
+  const { docs: expenses } = useCollection(COLLECTIONS.expenses);
+  const { docs: ideas } = useCollection(COLLECTIONS.ideas);
+  const { docs: itinerary } = useCollection(COLLECTIONS.itinerary);
+  const { docs: tasks } = useCollection(COLLECTIONS.tasks);
+  const { data: config } = useDocument(COLLECTIONS.settingsConfig);
 
   const leg = currentLeg();
 
@@ -93,7 +97,11 @@ export default function Dashboard() {
   const budget = config?.budgetTotalILS || DEFAULT_BUDGET_ILS;
   const pct = Math.min(100, Math.round((spent / budget) * 100));
   const overBudget = spent > budget;
-  const barColor = overBudget ? '#b85574' : pct >= 80 ? '#d4af7a' : '#7fb8ae';
+  const barColor = overBudget
+    ? BAR_COLORS.over
+    : spent / budget >= BUDGET_WARN_THRESHOLD
+      ? BAR_COLORS.warn
+      : BAR_COLORS.ok;
 
   const approvedCount = ideas.filter((i) => APPROVED_STATUS_IDS.includes(i.status)).length;
   const plannedDays = new Set(itinerary.map((i) => i.date)).size;
@@ -102,7 +110,7 @@ export default function Dashboard() {
   const todoDone = todoTasks.filter((t) => t.done).length;
   const packDone = packing.filter((t) => t.done).length;
 
-  const today = ymd(new Date());
+  const today = useToday(); // reactive — rolls over at midnight while the PWA stays alive
   const nextTask = useMemo(() => {
     const open = todoTasks.filter((t) => !t.done);
     const upcoming = open
@@ -135,17 +143,24 @@ export default function Dashboard() {
   // Dismissal is keyed by a signature of the current nudges (+ the day), so a
   // NEW or more-urgent nudge re-appears even if an earlier one was dismissed today.
   const nudgeSig = nudgeMessages.map((m) => `${m.key}:${m.tone}`).join('|');
-  const dismissKey = `honeymoon_nudge_dismissed_${today}`;
-  const [dismissedSig, setDismissedSig] = useState(() => {
+  const dismissKey = `${STORAGE_PREFIX}_nudge_dismissed_${today}`;
+  const [dismissedSig, setDismissedSig] = useState('');
+  // Re-read whenever the day (and so the key) changes — a dismissal is per-day,
+  // and must not survive a midnight rollover while the app stays mounted.
+  useEffect(() => {
     try {
-      return localStorage.getItem(dismissKey) || '';
+      setDismissedSig(localStorage.getItem(dismissKey) || '');
     } catch {
-      return '';
+      setDismissedSig('');
     }
-  });
+  }, [dismissKey]);
   const showNudges = nudgeMessages.length > 0 && dismissedSig !== nudgeSig;
   const dismissNudges = () => {
     try {
+      // Drop stale per-day keys so they don't accumulate forever.
+      Object.keys(localStorage)
+        .filter((k) => k.startsWith(`${STORAGE_PREFIX}_nudge_dismissed_`) && k !== dismissKey)
+        .forEach((k) => localStorage.removeItem(k));
       localStorage.setItem(dismissKey, nudgeSig);
     } catch {
       /* ignore */
@@ -231,7 +246,7 @@ export default function Dashboard() {
             <span className="font-medium text-ink">{nextTask.title}</span>
             {nextTask.dueDate && (
               <span className="shrink-0 rounded-full bg-petal px-2.5 py-0.5 text-xs font-semibold text-rose-deep">
-                {fmtDate(new Date(nextTask.dueDate))}
+                {fmtDate(toDate(nextTask.dueDate))}
               </span>
             )}
           </div>

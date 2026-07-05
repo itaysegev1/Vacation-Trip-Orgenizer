@@ -185,6 +185,13 @@ This single list feeds **two** layers, so keep it accurate:
 - **The Firestore rules:** the database itself rejects reads/writes from any other email —
   the real, server-side guard.
 
+**Email verification is required.** The generated rules also demand
+`email_verified == true` — without it, anyone who knew an allow-listed address could
+register *as* that address (before its real owner does) and read the whole trip. On
+registration the app sends a verification mail automatically; an unverified account sees a
+"verify your email" screen (with a resend button) instead of the app until the link is
+clicked.
+
 **`firestore.rules` is auto-generated and git-ignored — never hand-edit it.** To change who
 has access, edit `VITE_ALLOWED_EMAILS` in `.env` and run:
 
@@ -208,6 +215,7 @@ service cloud.firestore {
   match /databases/{database}/documents {
     function isAllowed() {
       return request.auth != null
+        && request.auth.token.email_verified == true
         && request.auth.token.email in [
           'you@gmail.com',
           'partner@gmail.com'
@@ -217,6 +225,8 @@ service cloud.firestore {
   }
 }
 ```
+
+(Emails are normalized to lowercase — Firebase tokens always carry the lowercased address.)
 
 Then push it to Firebase. Two ways:
 
@@ -230,6 +240,13 @@ firebase deploy --only firestore:rules
 > ⚠️ The rules only take effect **after** you deploy them. Editing `.env` alone changes the
 > in-app bouncer on your next build, but the database stays on the previously-deployed rules
 > until you run a deploy.
+
+> ⚠️ **Upgrading an existing deployment to the `email_verified` rules?** Deploy in this
+> order: **client first, rules second.** Existing password accounts start out *unverified* —
+> deploy the site, have every traveller open the app and verify via the emailed link (the
+> app shows the verification screen with a resend button), and only then
+> `firebase deploy --only firestore:rules`. Deploying the rules first locks everyone out
+> until they verify.
 
 > 🔓 **Why an env var?** The bouncer runs client-side, so the allow-list is bundled into the
 > deployed JS regardless — this keeps the real addresses out of the **public repo + git
@@ -259,6 +276,8 @@ Open it on a second device/account and changes sync between them in real time.
 | `npm run dev` | Run the real app against your Firebase project. |
 | `npm run dev:demo` | Run with in-memory sample data, no backend (preview only). |
 | `npm run build` | Production build into `dist/`. |
+| `npm run preview` | Serve the production build locally. |
+| `npm run gen-icons` | Regenerate the PWA icon set from the config emoji/colours. |
 | `npm run generate-rules` | Regenerate `firestore.rules` from `VITE_ALLOWED_EMAILS` (in `.env`). |
 | `npm run deploy` | **Generate rules → build → deploy** to Firebase (see §5). |
 
@@ -289,7 +308,9 @@ uploads **both** the security rules and the site. When it finishes you'll get a 
 - **iPhone (Safari):** Share → "Add to Home Screen".
 - **Android (Chrome):** ⋮ menu → "Install app" / "Add to Home Screen".
 
-It opens full-screen with its own icon, like a native app.
+It opens full-screen with its own icon, like a native app. The service worker precaches the
+app shell **and runtime-caches the Google Fonts**, so the app keeps its typography offline
+(airplane mode) too.
 
 ---
 
@@ -333,19 +354,19 @@ controls and what's in it for the shipped (Japan→Thailand) trip. Edit values i
 app re-derives everything from them.
 
 ```
-app · mode · locale · branding · travellers · sharedParty · guest · homeCountry
+app · mode · locale · branding · travellers · sharedParty · guest
 milestones · trip · destinations · currencies · budget · taxonomies · content
 infra · settings · theme · seed
 ```
 
 ### `app` — identity & storage keys
-App `name`, `version` (currently `2.3.0`), and `storageKeyPrefix` (`'honeymoon'`) used to
-namespace localStorage keys (FX-rate cache, "install dismissed" flag, etc.).
+App `name`, `version` (currently `3.0.2`), and `storageKeyPrefix` (`'honeymoon'`) used to
+namespace every localStorage key (FX-rate cache, geocode memo, nudge dismissals, "install
+dismissed" flag).
 
 ### `mode` — what kind of trip + feature switches
 - `isHoneymoon` (`true`) — enables the wedding milestone, "Just Married" copy, the 💕 couple tagline.
-- `justMarried` — flips to `true` automatically once the wedding date passes.
-- `features` — on/off switches for each module: `ideas, itinerary, budget, tasks, wallet, documents, apps`, plus flourishes `petals` (falling-petal particles), `confetti`, `currencyCalculator`, `homeFab` ("take me home" button). All `true` today.
+- `features` — on/off switches for each module: `ideas, itinerary, budget, tasks, wallet, documents, apps` (each flag removes the module's route **and** nav tab; a disabled path redirects home), plus flourishes `petals` (falling-petal particles), `confetti` (celebration bursts), `currencyCalculator` (header button), `homeFab` ("take me home" button). All `true` today.
 
 ### `locale` — language & layout direction
 `language: 'he'`, `direction: 'rtl'`, `dateLocale: 'he-IL'`. Drives `<html lang/dir>` and all date formatting. Set `'en'` / `'ltr'` for an English app.
@@ -357,9 +378,6 @@ namespace localStorage keys (FX-rate cache, "install dismissed" flag, etc.).
 - `travellers` — the trip members; the budget splits **N ways** between them. Each has `id`, `name`, `emoji`, and `matchEmails` (login-email substrings → resolve a user to this person, **cosmetic only**). Currently **Itay 🦊** and **Eitan 🐼**.
 - `sharedParty` — the "everyone / shared" pseudo-person (id `both`, **שנינו** 💞) used for shared expenses.
 - `guest` — fallback label/emoji (**אורח** 💕) for an unrecognized login.
-
-### `homeCountry` — where you depart from / return to
-`israel` 🇮🇱 (`iso: 'IL'`, `currencyCode: 'ILS'`). Drives the base currency, embassy framing, and route titles ("Israel → Japan").
 
 ### `milestones` & `trip` — the key dates
 - `milestones` — dated events with an emoji, label, and `doneMessage`. `showInCountdown` puts it in the dashboard's dual-countdown; `gatedBy` hides it unless a `mode` flag is on. Currently **💍 wedding** `2027-03-30` (gated by `isHoneymoon`), **✈️ takeoff** `2027-04-06`, **🏠 return** `2027-05-12`.
@@ -399,29 +417,32 @@ All the picklists across the app, each `{ id, label, emoji }` (some carry colour
 | `expenseCategories` | אוכל · תחבורה · לינה · פעילויות · קניות · שונות *(each with a chart colour)* |
 | `taskTypes` | ✅ משימות · 🧳 אריזה |
 | `appCategories` | מוניות 🚕 · מסעדות 🍽️ · תחבורה 🚆 · תרגום 🗣️ · ניווט 🗺️ · **מלונות 🏨 · אטרקציות 🎡 · כללי 📌** |
-| `documentTypes` | טיסות ✈️ · רכבות 🚄 · אטרקציות 🎟️ · מסעדות 🍽️ · לינה 🏨 · אנשי קשר 📇 · מידע 📝 — each defines its own form `fields`; `perPassenger` makes one card per traveller, `walletOnly` keeps it in the Wallet. |
+| `documentTypes` | טיסות ✈️ · רכבות 🚄 · אטרקציות 🎟️ · מסעדות 🍽️ · לינה 🏨 · אנשי קשר 📇 · מידע 📝 — each defines its own form `fields`; `perPassenger` makes one card per traveller, `walletOnly` keeps it in the Wallet, and `wallet: { chooserLabel, twoCols }` puts the type in the Wallet's chooser/sections. **The single source of truth** for both the Documents and Wallet pages. |
 
 ### `content` — all user-facing text → `src/config/content.ts`
 The `content` key pulls in [`src/config/content.ts`](src/config/content.ts), which holds every
-UI string grouped into `common`, `countdown`, `dashboard`, `login`, and `unauthorized`,
-plus an `fmt('{x}', { x })` interpolator. **Translate the app by editing that file.**
+UI string grouped into `common`, `countdown`, `dashboard`, `login`, `unauthorized`,
+`verifyEmail`, `ideas`, `itinerary`, `budget`, `tasks`, `wallet`, `apps`, `nudges`, and
+`nav`, plus an `fmt('{x}', { x })` interpolator. **Translate the app by editing that file.**
+(Trip-flavoured placeholders/empty-states live here; some generic page copy is still inline
+pending its own content pass.)
 
 ### `infra` — backend wiring & security
 - `allowedEmails` — **the access list** (exact emails allowed in; feeds both the bouncer and `firestore.rules` — see §3). Sourced from `VITE_ALLOWED_EMAILS` in `.env`, so real addresses stay out of the repo.
 - `demoMode` / `demoUserEmail` — demo toggle (overridden by `VITE_DEMO`) and the demo identity.
-- `collections` — Firestore collection names per feature.
-- `firebaseEnvVarNames` / `requiredBackendKeys` — maps Firebase config to the `VITE_FIREBASE_*` env vars.
-- `offlinePersistence`, `analyticsEnabled`, `mapsUrlTemplate` (the "open in Maps" link builder).
+- `collections` — Firestore collection/doc paths per feature; every page reads its path from here (rename a collection in one place).
+- `firebaseEnvVarNames` / `requiredBackendKeys` / `offlinePersistence` / `analyticsEnabled` — **documentation-only**: Vite substitutes `import.meta.env.*` statically, so `firebase.js` must reference the env vars literally; these fields document that wiring.
+- `mapsUrlTemplate` (the "open in Maps" link builder).
 - `geocoder` — free, no-key address→lat/lng (Nominatim): `urlTemplate`, `countryCodes` (`''` → auto-derived from `destinations[].iso`), `minIntervalMs` (rate limit), `cachePrefix`. Used only on save / lazy backfill, and fail-soft.
 
 ### `settings` — interaction & timing
-`linkScheme` (`https://`), `timings` (undo window, toast duration, long-press delay/tolerance, countdown tick rates), `haptics.enabled`, `geo` (`walkingSpeedKmh`, `nearbyRadiusKm`, `maxWalkLegKm` — legs longer than this are shown as transit 🚆, not walking), and `nudges` (`enabled`, `taskDueSoonDays`).
+`linkScheme` (`https://`), `timings` (undo window, toast duration, long-press delay/tolerance, countdown tick rates, `todayRefreshMs` — how often the app re-checks the local date so "today" rolls over at midnight without a reload), `haptics.enabled`, `geo` (`walkingSpeedKmh`, `nearbyRadiusKm`, `maxWalkLegKm` — legs longer than this are shown as transit 🚆, not walking), and `nudges` (`enabled`, `taskDueSoonDays`).
 
 ### `theme` — the palette, injected as CSS variables at boot
-`colors` (the full sakura palette — cream, petal, sakura, rose, gold, jade, teal, ink…), `fonts` (`Heebo` / `Frank Ruhl Libre`), `shadows` (soft/float/glow), the page `background` gradient, `ticket.perforation` (the boarding-pass tooth pattern), `fallbackAccentDestinationId`, `neutralAccent`, and `statTints` (dashboard stat colours). Mirrored statically in `src/index.css`'s `@theme` block.
+`colors` (the full sakura palette — cream, petal, sakura, rose, gold, jade, teal, ink…), `fonts` (`Heebo` / `Frank Ruhl Libre`), `shadows` (soft/float/glow), the page `background` gradient (injected as `--app-background`), `ticket` (`perforation` tooth pattern + per-card-type `accents` for the Wallet tickets), `fallbackAccentDestinationId`, `neutralAccent`, and `effects` (`petalColors`, `confettiColors`, `petalCount` for the decorative particles). Mirrored statically in `src/index.css`'s `@theme` block. (Dashboard stat tints live with their labels in `content.dashboard.stats`.)
 
 ### `seed` — one-tap sample data
-`flights` (3 sample legs) and `apps` (8 recommended apps) used by the in-app "add recommended…" buttons on empty pages. *(This is separate from the no-backend demo dataset, which lives in `src/lib/demoStore.js`.)*
+`flights` (3 sample legs, powering the "add the known flights" button in the Wallet/Documents) and `apps` (8 recommended apps) used by the in-app "add recommended…" buttons on empty pages. *(This is separate from the no-backend demo dataset, which lives in `src/lib/demoStore.js`.)*
 
 ---
 
