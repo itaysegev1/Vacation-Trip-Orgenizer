@@ -2,8 +2,9 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { triggerHaptic } from '../lib/haptics';
+import { TIMINGS } from '../lib/tripConfig';
 
-const UNDO_MS = 5000;
+const UNDO_MS = TIMINGS.undoWindowMs;
 const UndoCtx = createContext(null);
 
 /**
@@ -13,9 +14,11 @@ const UndoCtx = createContext(null);
  *  requestDelete(id, label, commit):
  *    - hides `id` (pages filter out `hiddenIds`)
  *    - shows a "נמחק / בטל" toast
- *    - after 5s with no undo, runs commit() (the real deleteDoc); the id is
- *      then removed from hiddenIds whether the write succeeds OR fails (on a
- *      rejected/offline write the item reappears instead of vanishing forever)
+ *    - after 5s with no undo, fires commit() (the real deleteDoc) WITHOUT
+ *      awaiting it — offline the promise stays pending until reconnect, and the
+ *      UI must never wait on a Firestore write. The local cache removes the doc
+ *      from the snapshot immediately, so un-hiding right away is safe; if the
+ *      server later rejects the delete, the doc reappears via the snapshot.
  *    - undo cancels the timer and un-hides immediately
  *
  * Pending timers are all cleared on unmount (e.g. logout) so no orphaned
@@ -43,16 +46,15 @@ export function UndoProvider({ children }) {
 
       const prev = timers.current.get(id);
       if (prev) clearTimeout(prev);
-      const t = setTimeout(async () => {
+      const t = setTimeout(() => {
+        // Fire the delete WITHOUT awaiting it (offline the promise stays pending
+        // until reconnect — the UI must never wait on a Firestore write), then
+        // clear the toast/hide in the same tick. The local cache drops the doc
+        // optimistically; a server rejection brings it back via the snapshot.
         timers.current.delete(id);
-        try {
-          await commit(); // real deleteDoc
-        } catch (e) {
-          console.error('delete failed', e);
-        } finally {
-          setToasts((arr) => arr.filter((x) => x.id !== id));
-          unhide(id); // clear whether it committed or failed (failed → reappears)
-        }
+        commit().catch((e) => console.error('delete failed', e));
+        setToasts((arr) => arr.filter((x) => x.id !== id));
+        unhide(id);
       }, UNDO_MS);
       timers.current.set(id, t);
     },

@@ -24,14 +24,41 @@ export const utcDay = (d = new Date()) => d.toISOString().slice(0, 10);
 // the old `new Date(year, monthIndex, day, 0, 0, 0)` form.
 const toDate = (s) => new Date(`${s}T00:00:00`);
 
+// Public version for display formatters: bare `new Date('YYYY-MM-DD')` parses
+// as UTC midnight, which renders as the PREVIOUS day in UTC-negative timezones.
+// Full datetimes (with a 'T') pass through untouched.
+export const parseLocalDate = (s) =>
+  s instanceof Date ? s : String(s).includes('T') ? new Date(s) : toDate(s);
+
+// How often useToday() re-checks the local date (see settings.timings).
+export const TODAY_REFRESH_MS = config.settings.timings.todayRefreshMs;
+
+// Interaction timings (undo window, long-press, countdown ticks, toast duration).
+export const TIMINGS = config.settings.timings;
+// Locale for all date display formatters (money formatters read it via currency.js).
+export const DATE_LOCALE = config.locale.dateLocale;
+// Firestore collection/doc paths per feature — the single place they're named.
+export const COLLECTIONS = config.infra.collections;
+// URL scheme prepended to schemeless links (Apps / Ideas).
+export const LINK_SCHEME = config.settings.linkScheme;
+// Prefix for every localStorage key the app owns.
+export const STORAGE_PREFIX = config.app.storageKeyPrefix;
+// Wallet ticket theming (perforation pattern + per-card-type accents).
+export const TICKET_THEME = config.theme.ticket;
+// Decorative particle palettes/counts (petals, confetti).
+export const EFFECTS = config.theme.effects;
+// Task-page tabs (tasks / packing).
+export const TASK_TYPES = config.taxonomies.taskTypes;
+
 const dests = config.destinations;
-const milestoneDate = (id) => config.milestones.find((m) => m.id === id)?.date;
 
 // ── App-level white-label surfaces ──────────────────────────────────────────
 export { fmt };
 export const CONTENT = config.content;
 export const MODE = config.mode;
 export const isHoneymoon = !!config.mode.isHoneymoon;
+// Feature switches — each gates its route/nav-tab/component (see Layout/BottomNav).
+export const FEATURES = config.mode.features;
 export const BRANDING = config.branding;
 
 // ── Dates & milestones ──────────────────────────────────────────────────────
@@ -44,31 +71,21 @@ export const MILESTONES = config.milestones
   .map((m) => ({ ...m, date: toDate(m.date) }))
   .sort((a, b) => a.date - b.date);
 
-export const TRIP = {
-  // The wedding 💍 (first countdown milestone)
-  wedding: toDate(milestoneDate('wedding')),
-  // Takeoff (the countdown target)
-  takeoff: toDate(milestoneDate('takeoff')),
-  // Landing in the first destination — itinerary starts here
-  landJapan: toDate(dests[0].startDate),
-  // First leg → second leg crossover
-  toThailand: toDate(dests[1].startDate),
-  // Return flight home — itinerary ends here
-  return: toDate(milestoneDate('return')),
-};
-
 // First & last day shown in the itinerary (YYYY-MM-DD)
 export const ITINERARY_START = config.trip.startDate;
 export const ITINERARY_END = config.trip.endDate;
 
 // Which destination a local "YYYY-MM-DD" falls in — works for ANY number of
-// legs (no binary boundary). Returns a destination id. Dates outside every
-// range clamp to the first / last leg.
+// legs (no binary boundary). Returns a destination id. Dates before the trip
+// clamp to the first leg; a gap day BETWEEN legs (e.g. a travel day in a
+// non-contiguous config) belongs to the UPCOMING leg; dates after the trip
+// clamp to the last leg.
 export function destinationForDate(dateStr) {
   if (!dateStr) return dests[0].id;
   const hit = dests.find((d) => dateStr >= d.startDate && dateStr <= d.endDate);
   if (hit) return hit.id;
-  return dateStr < dests[0].startDate ? dests[0].id : dests[dests.length - 1].id;
+  const next = dests.find((d) => dateStr < d.startDate);
+  return next ? next.id : dests[dests.length - 1].id;
 }
 
 // Every day of the trip: { dateStr, label, countryId } — shared by the
@@ -238,6 +255,31 @@ export const SEED_APPS = config.seed.apps.map((a) => ({
   category: a.category,
   link: a.link,
 }));
+
+// ── Document types (single source of truth: config.taxonomies.documentTypes) ──
+// Keyed object for form/preview lookups (Documents + Wallet).
+export const DOC_TYPES = Object.fromEntries(
+  config.taxonomies.documentTypes.map((t) => [t.id, t])
+);
+// Known flights (one-tap seed) — from config.seed.flights.
+export const SEED_FLIGHTS = config.seed.flights.map((f) => ({ title: f.title, fields: f.fields }));
+
+// Wallet surfaces, derived from the per-type `wallet` / `perPassenger` flags.
+const walletDocTypes = config.taxonomies.documentTypes.filter((t) => t.wallet);
+export const WALLET_TYPES = walletDocTypes.map((t) => t.id);
+export const WALLET_TYPE_CHOOSER = walletDocTypes.map((t) => ({
+  id: t.id,
+  label: t.wallet.chooserLabel,
+  emoji: t.emoji,
+}));
+export const WALLET_SECTIONS = walletDocTypes.map((t) => ({
+  type: t.id,
+  title: `${t.emoji} ${t.label}`,
+  cols: t.wallet.twoCols,
+}));
+export const PER_PASSENGER_TYPES = new Set(
+  config.taxonomies.documentTypes.filter((t) => t.perPassenger).map((t) => t.id)
+);
 
 // ── Currencies → object keyed by code (order: foreign-by-destination, then base) ──
 export const CURRENCIES = {};

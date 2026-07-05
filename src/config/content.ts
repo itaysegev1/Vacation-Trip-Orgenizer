@@ -77,10 +77,51 @@ export const content = {
     signOut: 'התנתקות',
   },
 
-  // Ideas page — proximity sort.
+  // Email-verification gate — firestore.rules requires email_verified, so an
+  // unverified (freshly-registered) account sees this screen until the link
+  // in the verification email is clicked. {email} filled by fmt().
+  verifyEmail: {
+    emoji: '📮',
+    title: 'רק לוודא שזה אתם',
+    message: 'שלחנו קישור אימות אל {email}. פתחו את המייל, לחצו על הקישור וחזרו לכאן.',
+    resend: 'שלחו לי שוב',
+    resent: 'נשלח! בדקו את תיבת הדואר (גם בספאם)',
+    refresh: 'אימתתי — המשיכו 💕',
+    notYetVerified: 'עוד לא אומת — לחצו על הקישור במייל ונסו שוב',
+    signOut: 'התנתקות',
+  },
+
+  // Ideas page — proximity sort + trip-flavoured placeholders/empty states.
   ideas: {
     proximityLabel: '📍 לפי קרבה',
     proximityHint: 'בחרו מדינה אחת כדי למיין לפי קרבה',
+    emptySubtitle: 'זמן לחפש סושי, מקדשים וחופים — הוסיפו את החלום הראשון שלכם ⛩️🏝️',
+    namePlaceholder: 'למשל: מקדש פושימי אינארי',
+    cityPlaceholder: 'קיוטו, טוקיו, בנגקוק…',
+  },
+
+  // Trip-flavoured copy for the remaining pages (Rule 1: trip facts never live
+  // in components). The rest of each page's generic copy migrates in a later
+  // content pass.
+  itinerary: {
+    activityPlaceholder: 'מלון פארק קיוטו / יום בטוקיו…',
+  },
+  budget: {
+    emptyTitle: 'עדיין לא הוצאתם שקל!',
+    emptySubtitle: 'כשתתחילו להזמין טיסות, מלונות וקצת ראמן — הכל יופיע כאן יפה ומסודר 🍜',
+  },
+  tasks: {
+    packingEmptySubtitle: 'מה אורזים לירח הדבש? בגדי ים, מצלמה ומלא סקרנות 👙📸',
+  },
+  wallet: {
+    emptySubtitle: 'הוסיפו כרטיסי טיסה, שינקנסן, שוברי אטרקציות ומלונות — והם יחכו לכם כאן, יפים ומסודרים ✈️🚄🎟️🏨',
+    flightPlaceholders: {
+      origin: 'תל אביב (TLV)',
+      layoverCity: 'איסטנבול (IST)',
+      finalDestination: 'טוקיו (NRT)',
+      flightNo: 'TK785 / TK198',
+    },
+    trainNoPlaceholder: 'Nozomi 21',
   },
 
   // Apps page — the generic (non-destination) tabs. Per-destination tabs derive

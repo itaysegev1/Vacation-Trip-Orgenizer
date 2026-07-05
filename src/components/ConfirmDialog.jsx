@@ -1,7 +1,8 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { prefersReducedMotion } from '../lib/motionVariants';
+import { useFocusTrap } from '../lib/useFocusTrap';
 
 const pop = prefersReducedMotion
   ? { initial: { opacity: 0 }, animate: { opacity: 1 }, exit: { opacity: 0 }, transition: { duration: 0.12 } }
@@ -22,6 +23,9 @@ export default function ConfirmDialog({
   onConfirm,
   onCancel,
 }) {
+  const dialogRef = useRef(null);
+  useFocusTrap(dialogRef, open);
+
   useEffect(() => {
     if (!open) return undefined;
     // Capture phase + stopImmediatePropagation so a single Escape closes only
@@ -47,9 +51,11 @@ export default function ConfirmDialog({
         >
           <div className="absolute inset-0 bg-ink/40 backdrop-blur-md" onClick={onCancel} aria-hidden="true" />
           <motion.div
+            ref={dialogRef}
             role="alertdialog"
             aria-modal="true"
             aria-label={title}
+            tabIndex={-1}
             className="relative z-10 w-full max-w-xs rounded-3xl bg-cream p-6 text-center shadow-2xl"
             {...pop}
           >

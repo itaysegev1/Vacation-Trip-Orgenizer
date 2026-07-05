@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { motion } from 'motion/react';
 import { useCollection } from '../lib/useCollection';
 import { useAuth } from '../context/AuthContext';
-import { COUPLE, PACKING_CATEGORIES, SHARED, NUDGES, ymd, byId } from '../lib/tripConfig';
+import { COUPLE, PACKING_CATEGORIES, SHARED, NUDGES, ymd, byId, parseLocalDate, COLLECTIONS, DATE_LOCALE, TASK_TYPES, CONTENT } from '../lib/tripConfig';
 import { taskUrgency } from '../lib/nudges';
 import { triggerHaptic } from '../lib/haptics';
 import { fireConfetti } from '../lib/confetti';
@@ -13,7 +13,7 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import EmptyState from '../components/EmptyState';
 
 const fmtDate = (s) =>
-  new Intl.DateTimeFormat('he-IL', { day: 'numeric', month: 'short' }).format(new Date(s));
+  new Intl.DateTimeFormat(DATE_LOCALE, { day: 'numeric', month: 'short' }).format(parseLocalDate(s));
 
 function Checkbox({ done, onClick }) {
   return (
@@ -86,7 +86,7 @@ function ProgressBar({ done, total }) {
 }
 
 export default function Tasks() {
-  const { docs, add, update, remove } = useCollection('tasks');
+  const { docs, add, update, remove } = useCollection(COLLECTIONS.tasks);
   const { profile } = useAuth();
   const [tab, setTab] = useState('task');
 
@@ -132,26 +132,28 @@ export default function Tasks() {
     const completing = !item.done;
     triggerHaptic(completing ? 'success' : 'light');
     if (completing) fireConfetti();
-    update(item.id, { done: !item.done });
+    update(item.id, { done: !item.done }).catch((err) => console.error('task toggle failed', err));
   };
 
   const save = (e) => {
     e.preventDefault();
     if (!form.title.trim()) return;
+    // Guard the optional keys — Firestore rejects `undefined` (an older doc
+    // spread into the form via openEdit may be missing them).
     const data =
       form.type === 'task'
         ? {
             title: form.title.trim(),
             type: 'task',
-            assignee: form.assignee,
+            assignee: form.assignee ?? SHARED.id,
             dueDate: form.dueDate || '',
             done: form.done || false,
           }
         : {
             title: form.title.trim(),
             type: 'packing',
-            category: form.category,
-            assignee: form.assignee,
+            category: form.category ?? PACKING_CATEGORIES[0]?.id ?? null,
+            assignee: form.assignee ?? SHARED.id,
             done: form.done || false,
           };
     (editing?.id ? update(editing.id, data) : add({ ...data, done: false })).catch((err) =>
@@ -171,10 +173,7 @@ export default function Tasks() {
 
       {/* Tabs */}
       <div className="mb-4 flex gap-2 rounded-2xl bg-white/60 p-1">
-        {[
-          { id: 'task', label: '✅ משימות' },
-          { id: 'packing', label: '🧳 אריזה' },
-        ].map((t) => (
+        {TASK_TYPES.map((t) => (
           <button
             key={t.id}
             onClick={() => setTab(t.id)}
@@ -205,7 +204,7 @@ export default function Tasks() {
             subtitle={
               tab === 'task'
                 ? 'הוסיפו מה צריך לסדר לפני הטיסה — דרכונים, ביטוח, כסף… ✈️'
-                : 'מה אורזים לירח הדבש? בגדי ים, מצלמה ומלא סקרנות 👙📸'
+                : CONTENT.tasks.packingEmptySubtitle
             }
             action={
               <button

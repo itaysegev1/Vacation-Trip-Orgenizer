@@ -3,6 +3,7 @@ import {
   onAuthStateChanged,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
+  sendEmailVerification,
   signOut,
   setPersistence,
   browserLocalPersistence,
@@ -65,7 +66,11 @@ export function AuthProvider({ children }) {
   const register = async (email, password) => {
     if (isDemo) return setUser(DEMO_USER);
     await setPersistence(auth, browserLocalPersistence);
-    return createUserWithEmailAndPassword(auth, email.trim(), password);
+    const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
+    // firestore.rules requires email_verified — kick off the verification mail
+    // right away (fire-and-forget; the VerifyEmail screen offers a resend).
+    sendEmailVerification(cred.user).catch(console.error);
+    return cred;
   };
 
   const logout = () => {
@@ -73,14 +78,34 @@ export function AuthProvider({ children }) {
     return signOut(auth);
   };
 
+  const resendVerification = () => {
+    if (isDemo || !auth?.currentUser) return Promise.resolve();
+    return sendEmailVerification(auth.currentUser);
+  };
+
+  // Re-read the user after the emailed link was clicked — onAuthStateChanged
+  // does NOT fire on reload(), so push a fresh clone into state ourselves.
+  const refreshUser = async () => {
+    if (isDemo || !auth?.currentUser) return false;
+    await auth.currentUser.reload();
+    const u = auth.currentUser;
+    setUser(Object.assign(Object.create(Object.getPrototypeOf(u)), u));
+    return u.emailVerified === true;
+  };
+
   const value = {
     user,
     profile: profileFromUser(user),
     authorized: isDemo || isEmailAllowed(user),
+    // Mirrors the email_verified requirement in firestore.rules: an unverified
+    // session would only see permission-denied errors, so gate it in the UI too.
+    verified: isDemo || user?.emailVerified === true,
     loading,
     login,
     register,
     logout,
+    resendVerification,
+    refreshUser,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

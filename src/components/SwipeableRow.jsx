@@ -40,7 +40,9 @@ export default function SwipeableRow({ children, onDelete, className = '' }) {
       exit={{ opacity: 0, scale: 0.85, transition: { duration: 0.22 } }}
       className={`relative ${className}`}
     >
-      {/* Trash button revealed underneath, on the right */}
+      {/* Trash button revealed underneath, on the right. Normally invisible
+          (opacity follows the drag), but keyboard focus reveals the row —
+          otherwise Tab would land on a fully invisible button. */}
       <motion.div
         style={{ opacity: trashOpacity }}
         className="pointer-events-none absolute inset-y-0 right-0 flex items-center pe-1"
@@ -49,6 +51,8 @@ export default function SwipeableRow({ children, onDelete, className = '' }) {
           type="button"
           style={{ scale: trashScale }}
           onClick={onDelete}
+          onFocus={openRow}
+          onBlur={() => close()}
           aria-label="מחיקה"
           className="pointer-events-auto grid min-h-12 w-16 place-items-center self-stretch rounded-2xl bg-rose-deep text-2xl text-white shadow-soft transition active:brightness-90"
         >

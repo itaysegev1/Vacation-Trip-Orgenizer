@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { motion } from 'motion/react';
 import { useAuth } from '../context/AuthContext';
 import { input, labelCls, btnPrimary } from '../lib/ui';
-import { BRANDING, CONTENT, TRAVELLERS, isHoneymoon } from '../lib/tripConfig';
+import { BRANDING, CONTENT, TRAVELLERS, isHoneymoon, EFFECTS } from '../lib/tripConfig';
 import PetalField from '../components/PetalField';
 
 const L = CONTENT.login;
@@ -34,7 +34,7 @@ export default function Login() {
 
   return (
     <div className="relative grid min-h-dvh place-items-center px-6">
-      <PetalField count={18} />
+      <PetalField count={EFFECTS.petalCount.auth} />
       <motion.div
         initial={{ opacity: 0, y: 24, scale: 0.96 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}

@@ -26,6 +26,14 @@ const BASE = BASE_CURRENCY.code;
 const LOCALE = config.locale.dateLocale;
 
 const { urlTemplate, cacheKey: CACHE_KEY, maxAgeMs: MAX_AGE_MS } = config.budget.exchangeRateApi;
+// Human-readable source label for the shared rates doc — the API's hostname.
+const RATE_SOURCE = (() => {
+  try {
+    return new URL(urlTemplate).hostname;
+  } catch {
+    return 'api';
+  }
+})();
 const API_URL = urlTemplate.replace('{base}', BASE);
 
 // Offline fallback (foreign-per-1-base), straight from config + a 0 timestamp.
@@ -105,7 +113,11 @@ function writeLocal(r) {
 // same value without its own API call. Best-effort, never awaited (offline-safe).
 function writeSharedRates(fresh) {
   if (!db) return;
-  const payload = { base: BASE, source: 'open.er-api.com', updatedAt: fresh.updatedAt || Date.now() };
+  // Never share partial results: the payload below drops the `partial` flag, so
+  // a fallback rate would masquerade as a real one on the other phone (and get
+  // snapshotted into the permanent rateHistory). Shared doc = real API rates only.
+  if (fresh.partial) return;
+  const payload = { base: BASE, source: RATE_SOURCE, updatedAt: fresh.updatedAt || Date.now() };
   FOREIGN_CURRENCIES.forEach((c) => {
     payload[c.code] = fresh[c.code];
   });

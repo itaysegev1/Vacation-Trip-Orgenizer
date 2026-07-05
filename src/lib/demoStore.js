@@ -171,9 +171,12 @@ export function demoSubColl(path, cb) {
 
 export function demoAdd(path, data) {
   if (!collections[path]) collections[path] = [];
-  collections[path].push({ id: genId(), createdAt: { seconds: nextSeq() }, ...data });
+  const id = genId();
+  collections[path].push({ id, createdAt: { seconds: nextSeq() }, ...data });
   emitColl(path);
-  return Promise.resolve();
+  // Mirror addDoc's contract: resolve with a ref-like { id } so demo callers
+  // (e.g. save-then-geocode) behave exactly like production.
+  return Promise.resolve({ id });
 }
 
 export function demoUpdate(path, id, data) {

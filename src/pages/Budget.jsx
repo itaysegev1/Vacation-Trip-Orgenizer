@@ -29,7 +29,12 @@ import {
   BUDGET_WARN_THRESHOLD,
   ymd,
   byId,
+  parseLocalDate,
+  COLLECTIONS,
+  DATE_LOCALE,
+  CONTENT,
 } from '../lib/tripConfig';
+import { useToday } from '../lib/useToday';
 import { input, labelCls, btnPrimary } from '../lib/ui';
 import { listContainer, tap } from '../lib/motionVariants';
 import { AnimatePresence } from 'motion/react';
@@ -44,10 +49,10 @@ import { useUndo } from '../context/UndoContext';
 
 const todayStr = () => ymd(new Date()); // local date (avoids UTC day-shift)
 const fmtDate = (s) =>
-  new Intl.DateTimeFormat('he-IL', { day: 'numeric', month: 'short' }).format(new Date(s));
+  new Intl.DateTimeFormat(DATE_LOCALE, { day: 'numeric', month: 'short' }).format(parseLocalDate(s));
 // Short numeric date for chart X-axis labels (local-midnight parse).
 const shortDate = (s) =>
-  new Intl.DateTimeFormat('he-IL', { day: 'numeric', month: 'numeric' }).format(new Date(`${s}T00:00:00`));
+  new Intl.DateTimeFormat(DATE_LOCALE, { day: 'numeric', month: 'numeric' }).format(new Date(`${s}T00:00:00`));
 
 // Minimal "who owes whom" settlement: greedily match debtors to creditors.
 // For two travellers this yields exactly one transaction (or none if balanced).
@@ -75,12 +80,13 @@ function settle(balances, threshold) {
 }
 
 export default function Budget() {
-  const { docs, add, update, remove } = useCollection('expenses');
-  const { data: config, save: saveConfig } = useDocument('settings/config');
+  const { docs, add, update, remove } = useCollection(COLLECTIONS.expenses);
+  const { data: config, save: saveConfig } = useDocument(COLLECTIONS.settingsConfig);
   const { rates, loading: ratesLoading, refresh } = useRates();
   const { series: rateSeries, points: ratePoints } = useRateHistory(rates);
   const { profile } = useAuth();
   const { requestDelete, hiddenIds } = useUndo();
+  const today = useToday(); // reactive — rolls over at midnight while the PWA stays alive
 
   const budget = config?.budgetTotalILS || DEFAULT_BUDGET_ILS;
 
@@ -94,11 +100,11 @@ export default function Budget() {
       currency: FOREIGN_CURRENCIES[0]?.code || 'JPY',
       category: EXPENSE_CATEGORIES[0]?.id || 'food',
       paidBy: profile?.id || SHARED.id,
-      date: todayStr(),
-      linkedDestination: destinationForDate(todayStr()),
+      date: today,
+      linkedDestination: destinationForDate(today),
       linkedActivity: '',
     }),
-    [profile]
+    [profile, today]
   );
 
   const [editing, setEditing] = useState(null);
@@ -112,7 +118,11 @@ export default function Budget() {
   const spent = useMemo(() => visible.reduce((s, e) => s + ilsOf(e), 0), [visible, rates]);
   const pct = Math.min(100, Math.round((spent / budget) * 100));
   const over = spent > budget;
-  const barColor = over ? '#b85574' : pct >= 80 ? '#d4af7a' : '#7fb8ae';
+  const barColor = over
+    ? BAR_COLORS.over
+    : spent / budget >= BUDGET_WARN_THRESHOLD
+      ? BAR_COLORS.warn
+      : BAR_COLORS.ok;
 
   const byCategory = useMemo(() => {
     const map = {};
@@ -125,7 +135,7 @@ export default function Budget() {
     () =>
       ANALYTICS.enabled
         ? computeBudgetAnalytics(visible, {
-            today: todayStr(),
+            today,
             tripStart: ITINERARY_START,
             tripEnd: ITINERARY_END,
             budget,
@@ -134,7 +144,7 @@ export default function Budget() {
           })
         : null,
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [visible, rates, budget]
+    [visible, rates, budget, today]
   );
 
   // Spend per destination — manual link wins, else fall back to the date.
@@ -332,7 +342,7 @@ export default function Budget() {
           )}
           {analytics.dailySeries.length >= 1 && (
             <div className="mt-3">
-              <p className="mb-1 text-xs text-ink-soft">הוצאה יומית (₪)</p>
+              <p className="mb-1 text-xs text-ink-soft">הוצאה יומית ({BASE_CURRENCY.symbol})</p>
               <LineChart
                 values={analytics.dailySeries.map((d) => d.total)}
                 labels={analytics.dailySeries.map((d) => shortDate(d.date))}
@@ -424,8 +434,8 @@ export default function Budget() {
       {sorted.length === 0 ? (
         <EmptyState
           emoji="💸"
-          title="עדיין לא הוצאתם שקל!"
-          subtitle="כשתתחילו להזמין טיסות, מלונות וקצת ראמן — הכל יופיע כאן יפה ומסודר 🍜"
+          title={CONTENT.budget.emptyTitle}
+          subtitle={CONTENT.budget.emptySubtitle}
           action={
             <button
               onClick={openNew}
@@ -637,7 +647,7 @@ export default function Budget() {
           className="space-y-4"
         >
           <div>
-            <label className={labelCls}>תקציב כולל (₪)</label>
+            <label className={labelCls}>תקציב כולל ({BASE_CURRENCY.symbol})</label>
             <input
               className={input}
               type="number"

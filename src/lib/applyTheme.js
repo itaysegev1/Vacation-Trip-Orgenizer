@@ -35,6 +35,8 @@ export function applyTheme(cfg = config) {
   Object.entries(theme.shadows || {}).forEach(([name, value]) => {
     root.style.setProperty(`--shadow-${kebab(name)}`, value);
   });
+  // Page background gradient → --app-background (body reads it in index.css)
+  if (theme.background) root.style.setProperty('--app-background', theme.background);
 
   // Locale & layout direction (was hardcoded lang="he" dir="rtl" in index.html)
   if (cfg.locale?.language) root.lang = cfg.locale.language;

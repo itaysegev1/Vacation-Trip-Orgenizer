@@ -1,7 +1,8 @@
 import { createContext, useContext, useMemo } from 'react';
 import { useCollection, useDocument } from '../lib/useCollection';
 import { useRates } from '../lib/currency';
-import { ymd } from '../lib/tripConfig';
+import { COLLECTIONS, ITINERARY_END } from '../lib/tripConfig';
+import { useToday } from '../lib/useToday';
 
 const TripDataCtx = createContext(null);
 
@@ -12,12 +13,12 @@ const TripDataCtx = createContext(null);
  * computed "where are we staying" hotel for the FAB.
  */
 export function TripDataProvider({ children }) {
-  const { docs: documents } = useCollection('documents');
-  const { data: dayNames } = useDocument('settings/dayNames');
+  const { docs: documents } = useCollection(COLLECTIONS.documents);
+  const { data: dayNames } = useDocument(COLLECTIONS.settingsDayNames);
   const { rates } = useRates();
+  const today = useToday(); // reactive — rolls over at midnight while the PWA stays alive
 
   const hotel = useMemo(() => {
-    const today = ymd(new Date());
     const lodging = documents.filter((d) => d.type === 'accommodation');
 
     // 1) The hotel whose stay covers tonight (checkIn ≤ today < checkOut).
@@ -34,7 +35,9 @@ export function TripDataProvider({ children }) {
       .filter((d) => d.fields?.checkIn && d.fields.checkIn >= today)
       .sort((a, b) => a.fields.checkIn.localeCompare(b.fields.checkIn))[0];
 
-    const pick = current || upcoming || lodging[0];
+    // The blind first-hotel fallback only makes sense before/during the trip —
+    // after it ends there is no "tonight's hotel" (the FAB hides on null).
+    const pick = current || upcoming || (today <= ITINERARY_END ? lodging[0] : null);
 
     if (pick) {
       return {
@@ -50,7 +53,7 @@ export function TripDataProvider({ children }) {
     // 3) Fall back to the free-text per-day name, if any.
     const dayName = dayNames?.[today];
     return dayName ? { name: dayName, isTonight: true } : null;
-  }, [documents, dayNames]);
+  }, [documents, dayNames, today]);
 
   const value = useMemo(() => ({ documents, dayNames, rates, hotel }), [documents, dayNames, rates, hotel]);
 

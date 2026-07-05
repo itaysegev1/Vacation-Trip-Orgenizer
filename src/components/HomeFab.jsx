@@ -5,10 +5,11 @@ import { useTripData } from '../context/TripDataContext';
 import { mapsUrl } from '../lib/maps';
 import { triggerHaptic } from '../lib/haptics';
 import { btnPrimary } from '../lib/ui';
+import { parseLocalDate, DATE_LOCALE } from '../lib/tripConfig';
 
 const fmtRange = (ci, co) => {
   if (!ci) return '';
-  const f = (s) => new Intl.DateTimeFormat('he-IL', { day: 'numeric', month: 'short' }).format(new Date(s));
+  const f = (s) => new Intl.DateTimeFormat(DATE_LOCALE, { day: 'numeric', month: 'short' }).format(parseLocalDate(s));
   return co ? `${f(ci)} – ${f(co)}` : f(ci);
 };
 
@@ -17,7 +18,10 @@ export default function HomeFab() {
   const { hotel } = useTripData();
   const [open, setOpen] = useState(false);
 
-  const mapQuery = hotel ? hotel.addressLocal || hotel.address || hotel.name : '';
+  // No hotel to show (e.g. after the trip ended) → no FAB.
+  if (!hotel) return null;
+
+  const mapQuery = hotel.addressLocal || hotel.address || hotel.name || '';
 
   return (
     <>

@@ -12,6 +12,9 @@ import {
   themeFor,
   NEUTRAL_ACCENT,
   GEO_SETTINGS,
+  COLLECTIONS,
+  DATE_LOCALE,
+  CONTENT,
 } from '../lib/tripConfig';
 import { hasCoords, haversineKm, fmtDistance, fmtWalk } from '../lib/geo';
 import { nearestNeighborOrder, dayStats } from '../lib/optimizeDay';
@@ -27,9 +30,9 @@ import { triggerHaptic } from '../lib/haptics';
 const SLOT_DOTS = { morning: 'var(--color-gold)', afternoon: 'var(--color-sakura)', evening: 'var(--color-jade)' };
 const SLOT_OPTIONS = SLOTS.map((s) => ({ id: s.id, label: `${s.emoji} ${s.label}`, bg: '#ffffff', dot: SLOT_DOTS[s.id] }));
 
-const weekday = (d) => new Intl.DateTimeFormat('he-IL', { weekday: 'short' }).format(d);
+const weekday = (d) => new Intl.DateTimeFormat(DATE_LOCALE, { weekday: 'short' }).format(d);
 const longDate = (d) =>
-  new Intl.DateTimeFormat('he-IL', { weekday: 'long', day: 'numeric', month: 'long' }).format(d);
+  new Intl.DateTimeFormat(DATE_LOCALE, { weekday: 'long', day: 'numeric', month: 'long' }).format(d);
 
 function buildDays() {
   const days = [];
@@ -46,9 +49,9 @@ function buildDays() {
 const EMPTY = { title: '', location: '', slot: 'morning', notes: '', linkedIdeaId: '' };
 
 export default function Itinerary() {
-  const { docs, add, update, remove } = useCollection('itinerary');
-  const { docs: ideas } = useCollection('ideas');
-  const { data: dayNames, save: saveDayNames } = useDocument('settings/dayNames');
+  const { docs, add, update, remove } = useCollection(COLLECTIONS.itinerary);
+  const { docs: ideas } = useCollection(COLLECTIONS.ideas);
+  const { data: dayNames, save: saveDayNames } = useDocument(COLLECTIONS.settingsDayNames);
 
   const days = useMemo(buildDays, []);
   const todayStr = ymd(new Date());
@@ -438,7 +441,7 @@ export default function Itinerary() {
               className={input}
               value={nameInput}
               onChange={(e) => setNameInput(e.target.value)}
-              placeholder="מלון פארק קיוטו / יום בטוקיו…"
+              placeholder={CONTENT.itinerary.activityPlaceholder}
               autoFocus
             />
           </div>

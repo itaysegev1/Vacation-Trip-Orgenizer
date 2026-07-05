@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Routes, Route, useLocation } from 'react-router-dom';
+import { lazy, Suspense, useState } from 'react';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AnimatePresence } from 'motion/react';
 import PetalField from './PetalField';
 import PetalBurst from './PetalBurst';
@@ -12,18 +12,20 @@ import { CountdownChip } from './Countdown';
 import HomeFab from './HomeFab';
 import CurrencyCalculator from './CurrencyCalculator';
 import { useAuth } from '../context/AuthContext';
-import { BRANDING } from '../lib/tripConfig';
+import { BRANDING, CONTENT, FEATURES, EFFECTS } from '../lib/tripConfig';
 import { UndoProvider } from '../context/UndoContext';
 import { TripDataProvider } from '../context/TripDataContext';
 
-import Dashboard from '../pages/Dashboard';
-import Ideas from '../pages/Ideas';
-import Itinerary from '../pages/Itinerary';
-import Budget from '../pages/Budget';
-import Tasks from '../pages/Tasks';
-import Wallet from '../pages/Wallet';
-import Documents from '../pages/Documents';
-import Apps from '../pages/Apps';
+// Route-level code splitting: each page loads as its own chunk on first visit,
+// keeping the initial (precached) bundle small on mobile.
+const Dashboard = lazy(() => import('../pages/Dashboard'));
+const Ideas = lazy(() => import('../pages/Ideas'));
+const Itinerary = lazy(() => import('../pages/Itinerary'));
+const Budget = lazy(() => import('../pages/Budget'));
+const Tasks = lazy(() => import('../pages/Tasks'));
+const Wallet = lazy(() => import('../pages/Wallet'));
+const Documents = lazy(() => import('../pages/Documents'));
+const Apps = lazy(() => import('../pages/Apps'));
 
 function Header({ onLogout, profile }) {
   return (
@@ -38,10 +40,10 @@ function Header({ onLogout, profile }) {
         </div>
         <div className="flex items-center gap-2">
           <CountdownChip />
-          <CurrencyCalculator />
+          {FEATURES.currencyCalculator && <CurrencyCalculator />}
           <button
             onClick={onLogout}
-            aria-label="התנתקות"
+            aria-label={CONTENT.common.logout}
             title={profile?.label}
             className="grid h-9 w-9 place-items-center rounded-full bg-petal text-lg active:scale-90 transition"
           >
@@ -62,7 +64,7 @@ export default function Layout() {
     <UndoProvider>
     <TripDataProvider>
     <div className="relative min-h-dvh">
-      <PetalField count={12} />
+      {FEATURES.petals && <PetalField count={EFFECTS.petalCount.app} />}
 
       <Header onLogout={() => setConfirmLogout(true)} profile={profile} />
 
@@ -70,33 +72,38 @@ export default function Layout() {
         <SideNav />
         <main className="min-w-0 flex-1 px-4 pb-28 pt-3 lg:px-0 lg:pb-12">
           <div className="mx-auto w-full max-w-md lg:max-w-none">
-            <AnimatePresence mode="wait">
-              <Routes location={location} key={location.pathname}>
-                <Route path="/" element={<PageTransition><Dashboard /></PageTransition>} />
-                <Route path="/ideas" element={<PageTransition><Ideas /></PageTransition>} />
-                <Route path="/itinerary" element={<PageTransition><Itinerary /></PageTransition>} />
-                <Route path="/budget" element={<PageTransition><Budget /></PageTransition>} />
-                <Route path="/tasks" element={<PageTransition><Tasks /></PageTransition>} />
-                <Route path="/wallet" element={<PageTransition><Wallet /></PageTransition>} />
-                <Route path="/documents" element={<PageTransition><Documents /></PageTransition>} />
-                <Route path="/apps" element={<PageTransition><Apps /></PageTransition>} />
-                <Route path="*" element={<PageTransition><Dashboard /></PageTransition>} />
-              </Routes>
-            </AnimatePresence>
+            <Suspense fallback={null}>
+              <AnimatePresence mode="wait">
+                {/* Feature-gated routes: a disabled module has no route (and no
+                    nav tab — BottomNav filters the same flags); unknown/disabled
+                    paths redirect home. */}
+                <Routes location={location} key={location.pathname}>
+                  <Route path="/" element={<PageTransition><Dashboard /></PageTransition>} />
+                  {FEATURES.ideas && <Route path="/ideas" element={<PageTransition><Ideas /></PageTransition>} />}
+                  {FEATURES.itinerary && <Route path="/itinerary" element={<PageTransition><Itinerary /></PageTransition>} />}
+                  {FEATURES.budget && <Route path="/budget" element={<PageTransition><Budget /></PageTransition>} />}
+                  {FEATURES.tasks && <Route path="/tasks" element={<PageTransition><Tasks /></PageTransition>} />}
+                  {FEATURES.wallet && <Route path="/wallet" element={<PageTransition><Wallet /></PageTransition>} />}
+                  {FEATURES.documents && <Route path="/documents" element={<PageTransition><Documents /></PageTransition>} />}
+                  {FEATURES.apps && <Route path="/apps" element={<PageTransition><Apps /></PageTransition>} />}
+                  <Route path="*" element={<Navigate to="/" replace />} />
+                </Routes>
+              </AnimatePresence>
+            </Suspense>
           </div>
         </main>
       </div>
 
       <BottomNav />
-      <HomeFab />
-      <PetalBurst />
+      {FEATURES.homeFab && <HomeFab />}
+      {FEATURES.confetti && <PetalBurst />}
       <InstallPrompt />
 
       <ConfirmDialog
         open={confirmLogout}
-        title="להתנתק?"
-        message="תצטרכו להתחבר שוב בפעם הבאה"
-        confirmLabel="התנתקות"
+        title={CONTENT.common.logoutTitle}
+        message={CONTENT.common.logoutMessage}
+        confirmLabel={CONTENT.common.logout}
         cancelLabel="נשארים"
         danger={false}
         onCancel={() => setConfirmLogout(false)}

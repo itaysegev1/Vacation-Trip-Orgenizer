@@ -8,8 +8,9 @@ import {
   APP_GENERAL,
   DESTINATIONS,
   SEED_APPS,
+  COLLECTIONS,
 } from '../lib/tripConfig';
-import { input, labelCls, btnPrimary, btnGhost } from '../lib/ui';
+import { input, labelCls, btnPrimary, btnGhost, normalizeUrl } from '../lib/ui';
 import { listContainer, listItem, tap, prefersReducedMotion } from '../lib/motionVariants';
 import Modal from '../components/Modal';
 import ConfirmDialog from '../components/ConfirmDialog';
@@ -20,14 +21,8 @@ const DEFAULT_COUNTRY = DESTINATIONS[0]?.id || APP_GENERAL.id;
 const DEFAULT_CATEGORY = APP_CATEGORIES[0]?.id || 'taxi';
 const EMPTY = { name: '', country: DEFAULT_COUNTRY, category: DEFAULT_CATEGORY, link: '' };
 
-const normalizeUrl = (url) => {
-  const u = (url || '').trim();
-  if (!u) return '';
-  return /^https?:\/\//i.test(u) ? u : `https://${u}`;
-};
-
 export default function Apps() {
-  const { docs, loading, add, update, remove } = useCollection('useful_apps');
+  const { docs, loading, add, update, remove } = useCollection(COLLECTIONS.apps);
   const [country, setCountry] = useState('all');
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(EMPTY);

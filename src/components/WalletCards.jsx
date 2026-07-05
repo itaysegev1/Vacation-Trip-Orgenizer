@@ -4,10 +4,13 @@ import { flipTransition } from '../lib/motionVariants';
 import { triggerHaptic } from '../lib/haptics';
 import { mapsUrl } from '../lib/maps';
 import { layoverFromFields } from '../lib/flightUtils';
-import { seatKey } from '../lib/tripConfig';
+import { seatKey, parseLocalDate, DATE_LOCALE, TICKET_THEME } from '../lib/tripConfig';
+
+// Per-card-type accent palette — from theme.ticket.accents (config-driven).
+const ACCENTS = TICKET_THEME.accents;
 
 const fmtDate = (s) =>
-  s ? new Intl.DateTimeFormat('he-IL', { day: 'numeric', month: 'short' }).format(new Date(s)) : '';
+  s ? new Intl.DateTimeFormat(DATE_LOCALE, { day: 'numeric', month: 'short' }).format(parseLocalDate(s)) : '';
 
 // Split "🇮🇱 ישראל → יפן 🇯🇵" into its two endpoints.
 function route(title = '') {
@@ -37,10 +40,11 @@ const mulberry32 = (a) => () => {
 };
 
 export function Barcode({ seed, className = '' }) {
+  const { teeth, minSize, maxSize } = TICKET_THEME.perforation;
   const bars = useMemo(() => {
     const rnd = mulberry32(hashSeed(String(seed || 'x')));
-    return Array.from({ length: 34 }, () => 1 + Math.round(rnd() * 3));
-  }, [seed]);
+    return Array.from({ length: teeth }, () => minSize + Math.round(rnd() * (maxSize - minSize)));
+  }, [seed, teeth, minSize, maxSize]);
   return (
     <div className={`flex items-stretch gap-[2px] ${className}`} aria-hidden="true">
       {bars.map((w, i) => (
@@ -103,8 +107,7 @@ export function BoardingPass({ doc, passenger, onEdit }) {
   const from = conn ? f.origin || r.from : r.from || doc.title;
   const to = conn ? f.finalDestination || r.to : r.to;
   const seat = seatFor(f, passenger);
-  const accent = '#b85574';
-  const soft = '#f4a6b8';
+  const { accent, soft } = ACCENTS.flight;
   const layover = conn ? layoverFromFields(f) : '';
   // Departure vs landing (connection uses origin/final-segment times).
   const depTime = conn ? f.depTimeOrigin : f.time;
@@ -203,8 +206,7 @@ export function TrainTicket({ doc, passenger, onEdit }) {
   const f = doc.fields || {};
   const { from, to } = route(doc.title);
   const seat = seatFor(f, passenger);
-  const accent = '#1f7a6f';
-  const soft = '#2fa395';
+  const { accent, soft } = ACCENTS.train;
 
   return (
     <motion.button
@@ -262,8 +264,8 @@ export function TrainTicket({ doc, passenger, onEdit }) {
    Distinct from boarding passes: a soft tinted card with a coloured side stub
    instead of a bold header band. */
 const VOUCHER_STYLES = {
-  attraction: { icon: '🎟️', kicker: 'כרטיס כניסה', accent: '#3a8f84', tint: '#eaf5f2' },
-  restaurant: { icon: '🍽️', kicker: 'שובר הזמנה', accent: '#c79a4e', tint: '#faf3e3' },
+  attraction: { icon: '🎟️', kicker: 'כרטיס כניסה', accent: ACCENTS.attraction.accent, tint: ACCENTS.attraction.tint },
+  restaurant: { icon: '🍽️', kicker: 'שובר הזמנה', accent: ACCENTS.restaurant.accent, tint: ACCENTS.restaurant.tint },
 };
 
 export function Voucher({ doc, passenger, kind = 'attraction', onEdit }) {
@@ -271,11 +273,13 @@ export function Voucher({ doc, passenger, kind = 'attraction', onEdit }) {
   const s = VOUCHER_STYLES[kind] || VOUCHER_STYLES.attraction;
 
   return (
-    <motion.button
-      type="button"
+    // A div (not a button): interactive elements can't nest, and this card
+    // contains real map links. Tap anywhere still edits (pointer convenience);
+    // the title below is the keyboard/AT edit affordance.
+    <motion.div
       whileTap={{ scale: 0.985 }}
       onClick={onEdit}
-      className="relative flex w-full overflow-hidden rounded-2xl border border-white/70 text-right shadow-soft"
+      className="relative flex w-full cursor-pointer overflow-hidden rounded-2xl border border-white/70 text-right shadow-soft"
       style={{ background: s.tint }}
     >
       {/* Punched notches on the vertical perforation between stub and body */}
@@ -285,7 +289,16 @@ export function Voucher({ doc, passenger, kind = 'attraction', onEdit }) {
       {/* Body */}
       <div className="min-w-0 flex-1 p-4">
         <div className="flex items-start justify-between gap-2">
-          <h3 className="truncate font-display text-lg text-ink">{doc.title}</h3>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onEdit();
+            }}
+            className="min-w-0 truncate text-right font-display text-lg text-ink"
+          >
+            {doc.title}
+          </button>
           <PassengerTag passenger={passenger} />
         </div>
 
@@ -346,7 +359,7 @@ export function Voucher({ doc, passenger, kind = 'attraction', onEdit }) {
         <span className="text-2xl">{s.icon}</span>
         <span className="text-[0.6rem] font-bold leading-tight">{s.kicker}</span>
       </div>
-    </motion.button>
+    </motion.div>
   );
 }
 
@@ -354,8 +367,7 @@ export function Voucher({ doc, passenger, kind = 'attraction', onEdit }) {
 export function HotelCard({ doc, onEdit }) {
   const [flipped, setFlipped] = useState(false);
   const f = doc.fields || {};
-  const accent = '#b8860b';
-  const gold = '#d4af7a';
+  const { accent, soft: gold } = ACCENTS.hotel;
 
   const face = 'absolute inset-0 backface-hidden overflow-hidden rounded-2xl border border-white/70 shadow-soft';
 
@@ -366,9 +378,11 @@ export function HotelCard({ doc, onEdit }) {
         animate={{ rotateY: flipped ? 180 : 0 }}
         transition={flipTransition}
       >
-        {/* FRONT */}
+        {/* FRONT — inert while flipped away, so the hidden face (and everything
+            inside it) leaves the tab order and the accessibility tree. */}
         <button
           type="button"
+          inert={flipped || undefined}
           onClick={() => {
             triggerHaptic('light');
             setFlipped(true);
@@ -401,6 +415,7 @@ export function HotelCard({ doc, onEdit }) {
         <div
           role="button"
           tabIndex={0}
+          inert={!flipped || undefined}
           aria-label={`${doc.title} — צד אחורי`}
           onClick={() => {
             triggerHaptic('light');
